@@ -57,7 +57,13 @@ python tools/ha_test_fixture.py cleanup    # 全部删除
 
 创建记录保存在 `tools/.ha_fixture_state.json`（本机测试数据，不要对外分享）；不要把地址、令牌写进任何文件。
 
-## 构建
+## 安装到手表
+
+到 [Releases](https://github.com/ElmGates/Homeassistant-APP-For-HarmonyOS-Watch/releases/latest) 下载 `.hap` 安装包，用 [小白调试助手（auto-installer）](https://github.com/likuai2010/auto-installer) 安装到手表即可。
+
+## 从源码构建
+
+路径不要包含中文。仓库中的 `build-profile.json5` 不含签名信息，签名配置只保存在你本机。
 
 用 DevEco Studio 6.1 打开本目录，配置 WATCH 5 调试签名并运行。命令行构建：
 
