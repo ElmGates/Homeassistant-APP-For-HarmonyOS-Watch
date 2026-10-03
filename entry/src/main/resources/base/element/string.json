@@ -1,0 +1,7 @@
+{
+  "string": [
+    { "name": "app_name", "value": "腕上智家" },
+    { "name": "module_desc", "value": "适用于 Home Assistant 的鸿蒙手表智能家居快捷控制。" },
+    { "name": "EntryAbility_desc", "value": "在手表上快速控制 Home Assistant 中的设备。" }
+  ]
+}

@@ -1,0 +1,25 @@
+# Build output and dependencies
+/oh_modules/
+/entry/oh_modules/
+/build/
+/entry/build/
+/.hvigor/
+/entry/.preview/
+
+# IDE and local tooling
+/.idea/
+/.memory/
+.DS_Store
+Thumbs.db
+__pycache__/
+local.properties
+
+# Signing material (never commit certificates or keystores)
+*.p12
+*.cer
+*.p7b
+*.csr
+*.jks
+
+# Local Home Assistant test data
+/tools/.ha_fixture_state.json

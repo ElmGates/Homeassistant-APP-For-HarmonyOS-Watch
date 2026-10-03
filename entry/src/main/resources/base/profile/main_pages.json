@@ -1,0 +1,12 @@
+{
+  "src": [
+    "pages/Index",
+    "pages/RoomDevices",
+    "pages/DeviceGroupDetails",
+    "pages/DirectEntityDetails",
+    "pages/Settings",
+    "pages/About",
+    "pages/PhoneSetup",
+    "pages/NetworkDiagnose"
+  ]
+}

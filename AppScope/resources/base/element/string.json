@@ -1,0 +1,12 @@
+{
+  "string": [
+    {
+      "name": "app_name",
+      "value": "腕上智家"
+    },
+    {
+      "name": "app_desc",
+      "value": "适用于 Home Assistant 的鸿蒙手表智能家居快捷控制。"
+    }
+  ]
+}
