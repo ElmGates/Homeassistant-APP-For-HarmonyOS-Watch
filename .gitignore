@@ -23,3 +23,5 @@ local.properties
 
 # Local Home Assistant test data
 /tools/.ha_fixture_state.json
+# 网站文件不进仓库，单独部署到 watch.superjia.org
+docs/site/

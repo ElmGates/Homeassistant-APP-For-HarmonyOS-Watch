@@ -84,7 +84,7 @@ export DEVECO_SDK_HOME=/Applications/DevEco-Studio.app/Contents/sdk
 ## 验证状态与限制
 
 - 已在 HUAWEI WATCH 5（HarmonyOS 6.1）真机上，分别通过 Wi‑Fi 和蓝牙（经手机网络）连接 Home Assistant 完成控制。
-- 手表经蓝牙使用手机网络时，如果 HA 经海外 CDN 访问，TLS 握手可能很慢。可在应用的「设置 → 网络诊断」中逐项查看耗时，并参考 `docs/site/security.html` 选择更快的远程访问方式。
+- 手表经蓝牙使用手机网络时，如果 HA 经海外 CDN 访问，TLS 握手可能很慢。可在应用的「设置 → 网络诊断」中逐项查看耗时，并参考[远程访问安全指南](https://watch.superjia.org/security.html)选择更快的远程访问方式。
 - 「用手机填写」需要手表连接 Wi‑Fi 且与手机处于同一局域网，模拟器无法使用。
 - 尚未支持：多个双重验证模块的复杂登录流程、实时状态推送（目前在打开应用或页面时按需同步）。
 
