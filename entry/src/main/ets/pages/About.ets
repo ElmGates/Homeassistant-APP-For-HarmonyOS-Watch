@@ -6,6 +6,8 @@ import { ArcScrollBar } from '@kit.ArkUI';
 
 // Product site (docs/site/ is deployed here).
 const WEBSITE: string = 'https://watch.superjia.org';
+const PRIVACY_URL: string = 'https://watch.superjia.org/privacy';
+const TERMS_URL: string = 'https://watch.superjia.org/terms';
 
 interface OpenSourceReference {
   name: string;
@@ -66,6 +68,23 @@ struct About {
         }
         .width('100%')
         ListItem() { InfoText({ text: 'watch.superjia.org', textSize: 13 }) }
+        ListItem() { SectionLabel({ title: '隐私与协议' }) }
+        ListItem() { InfoText({ text: '本应用不收集、不上传任何个人信息，只与你自己的 Home Assistant 通信。', textSize: 12 }) }
+        ListItem() { InfoText({ text: '隐私政策：' + PRIVACY_URL.replace('https://', ''), textSize: 12, textColor: Theme.TEXT_SUB }) }
+        ListItem() { InfoText({ text: '用户协议：' + TERMS_URL.replace('https://', ''), textSize: 12, textColor: Theme.TEXT_SUB }) }
+        ListItem() {
+          Row() {
+            QRCode(PRIVACY_URL)
+              .width(110).height(110)
+              .color(Color.Black)
+              .backgroundColor(Color.White);
+          }
+          .padding(8)
+          .borderRadius(12)
+          .backgroundColor(Color.White);
+        }
+        .width('100%')
+        ListItem() { InfoText({ text: '用手机扫码查看完整隐私政策', textSize: 11 }) }
         ListItem() { SectionLabel({ title: '开源代码参考' }) }
         ForEach(REFERENCES, (ref: OpenSourceReference) => {
           ListItem() {

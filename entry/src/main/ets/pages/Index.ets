@@ -14,14 +14,15 @@ import { ArcScrollBar } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 
 // Bump when the usage terms below change: everyone is asked to accept them again.
-const TERMS_VERSION: number = 1;
+const TERMS_VERSION: number = 2;
 
 const TERMS: string[] = [
   '腕上智家是开源的第三方应用，与 Home Assistant 官方及华为没有关联。',
   '应用直接连接你自己的 Home Assistant，不经过任何第三方服务器，不收集、不上传任何个人数据。',
   '登录后只保存可撤销的登录凭证，由系统安全模块加密存放在手表上；密码不保存。',
   '远程控制设备可能因网络延迟或误触而产生意外结果，请留意设备的实际状态；因使用本应用造成的任何损失，开发者不承担责任。',
-  '本应用按 AGPL-3.0 开源协议提供，不附带任何形式的担保。'
+  '本应用按 AGPL-3.0 开源协议提供，不附带任何形式的担保。',
+  '完整的隐私政策与用户协议：watch.superjia.org/privacy、watch.superjia.org/terms（也可在「更多 → 关于」中查看）。'
 ];
 
 interface RoomRouteParams {
