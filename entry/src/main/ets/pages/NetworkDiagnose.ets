@@ -24,6 +24,7 @@ struct NetworkDiagnose {
     this.running = true;
     this.steps = [];
     const diagnostics: NetworkDiagnostics = new NetworkDiagnostics(this.store.getServer(),
+      this.store.lanOff ? '' : this.store.lanUrl,
       () => this.store.freshAccessToken(),
       (step: DiagStep) => { this.steps = this.steps.concat([step]); });
     try {
@@ -36,7 +37,7 @@ struct NetworkDiagnose {
   build() {
     Stack() {
       List({ scroller: this.scroller, space: 6 }) {
-        ListItem() { SystemHeader({ title: '网络诊断' }) }
+        ListItem() { SystemHeader({ title: '连接诊断' }) }
         if (!this.store.configured) {
           ListItem() { InfoText({ text: '请先登录 Home Assistant', textSize: 14 }) }
         }

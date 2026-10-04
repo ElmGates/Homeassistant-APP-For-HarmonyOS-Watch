@@ -1,7 +1,13 @@
 {
   "string": [
-    { "name": "app_name", "value": "腕上智家" },
-    { "name": "module_desc", "value": "适用于 Home Assistant 的鸿蒙手表智能家居快捷控制。" },
-    { "name": "EntryAbility_desc", "value": "在手表上快速控制 Home Assistant 中的设备。" }
+    {"name": "app_name", "value": "腕上智家"},
+    {"name": "module_desc", "value": "适用于 Home Assistant 的鸿蒙手表智能家居快捷控制。"},
+    {"name": "EntryAbility_desc", "value": "在手表上快速控制 Home Assistant 中的设备。"},
+    {"name": "widget_name", "value": "常用设备"},
+    {"name": "widget_name_small", "value": "常用设备（小）"},
+    {"name": "widget_name_wide", "value": "单个设备（长条）"},
+    {"name": "widget_name_round", "value": "单个设备（圆形）"},
+    {"name": "widget_desc_single", "value": "在表盘卡片上一键控制一个设备或场景。"},
+    {"name": "widget_desc", "value": "在表盘卡片上一键控制常用设备，内容可在应用的设置中更换。"}
   ]
 }

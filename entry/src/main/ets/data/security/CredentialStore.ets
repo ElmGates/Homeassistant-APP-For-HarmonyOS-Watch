@@ -7,6 +7,18 @@ export interface ConnectionCredentials {
   server: string;
   refreshToken: string;
   allowLocalHttp: boolean;
+  // LAN address used at home ('' when not set), and whether the user turned LAN access off.
+  lanUrl: string;
+  lanOff: boolean;
+  // The LAN address was found automatically (re-detected at launch) rather than typed by the user.
+  lanAuto: boolean;
+}
+
+// The short-lived access token, kept so a restart within its lifetime skips the token exchange
+// (one HTTPS round trip, slow over the phone's Bluetooth).
+export interface CachedAccess {
+  token: string;
+  expiresAt: number;
 }
 
 interface HuksFailure {
@@ -14,13 +26,18 @@ interface HuksFailure {
 }
 
 export class CredentialStore {
-  private readonly ctx: common.UIAbilityContext;
+  private readonly ctx: common.Context;
   private readonly alias: string = 'ha_watch_refresh_aes_gcm_v1';
   private readonly legacyAlias: string = 'ha_watch_token_aes_gcm_v1';
   private readonly fileName: string = 'ha_connection';
 
-  constructor(ctx: common.UIAbilityContext) {
+  constructor(ctx: common.Context) {
     this.ctx = ctx;
+  }
+
+  // The widget runs in its own process: drop its cached copy so a new login in the app is picked up.
+  reloadFromDisk(): void {
+    preferences.removePreferencesFromCacheSync(this.ctx, { name: this.fileName });
   }
 
   async load(): Promise<ConnectionCredentials | undefined> {
@@ -47,7 +64,10 @@ export class CredentialStore {
     const session: huks.HuksSessionHandle = await huks.initSession(this.alias, options);
     const result: huks.HuksReturnResult = await huks.finishSession(session.handle, options);
     if (!result.outData) throw new Error('安全凭证解密失败');
-    return { server, refreshToken: this.fromBytes(result.outData), allowLocalHttp };
+    const lanUrl: string = await prefs.get('lan_url', '') as string;
+    const lanOff: boolean = await prefs.get('lan_off', false) as boolean;
+    const lanAuto: boolean = await prefs.get('lan_auto', false) as boolean;
+    return { server, refreshToken: this.fromBytes(result.outData), allowLocalHttp, lanUrl, lanOff, lanAuto };
   }
 
   async save(server: string, refreshToken: string, allowLocalHttp: boolean): Promise<void> {
@@ -69,8 +89,60 @@ export class CredentialStore {
     await prefs.flush();
   }
 
+  async saveAccess(token: string, expiresAt: number): Promise<void> {
+    if (!await this.keyExists()) return;
+    const nonce: Uint8Array = cryptoFramework.createRandom().generateRandomSync(12).data;
+    const options: huks.HuksOptions = {
+      properties: this.operationProperties(huks.HuksKeyPurpose.HUKS_KEY_PURPOSE_ENCRYPT, nonce),
+      inData: this.toBytes(token)
+    };
+    const session: huks.HuksSessionHandle = await huks.initSession(this.alias, options);
+    const result: huks.HuksReturnResult = await huks.finishSession(session.handle, options);
+    if (!result.outData || result.outData.length < 17) return;
+    const prefs: preferences.Preferences = await preferences.getPreferences(this.ctx, this.fileName);
+    await prefs.put('access_nonce', this.toHex(nonce));
+    await prefs.put('access_cipher', this.toHex(result.outData));
+    await prefs.put('access_expires', expiresAt);
+    await prefs.flush();
+  }
+
+  async loadAccess(): Promise<CachedAccess | undefined> {
+    const prefs: preferences.Preferences = await preferences.getPreferences(this.ctx, this.fileName);
+    const expiresAt: number = await prefs.get('access_expires', 0) as number;
+    const nonceHex: string = await prefs.get('access_nonce', '') as string;
+    const cipherHex: string = await prefs.get('access_cipher', '') as string;
+    if (Date.now() + 120000 >= expiresAt || !nonceHex || !cipherHex || !await this.keyExists()) return undefined;
+    const nonce: Uint8Array = this.fromHex(nonceHex);
+    const ciphertext: Uint8Array = this.fromHex(cipherHex);
+    if (nonce.length !== 12 || ciphertext.length < 17) return undefined;
+    const options: huks.HuksOptions = {
+      properties: this.operationProperties(huks.HuksKeyPurpose.HUKS_KEY_PURPOSE_DECRYPT, nonce,
+        ciphertext.slice(ciphertext.length - 16)),
+      inData: ciphertext.slice(0, ciphertext.length - 16)
+    };
+    const session: huks.HuksSessionHandle = await huks.initSession(this.alias, options);
+    const result: huks.HuksReturnResult = await huks.finishSession(session.handle, options);
+    if (!result.outData) return undefined;
+    return { token: this.fromBytes(result.outData), expiresAt: expiresAt };
+  }
+
+  // Not secret (a LAN address), so stored in plain preferences next to the encrypted token.
+  async saveLan(lanUrl: string, lanOff: boolean, lanAuto: boolean): Promise<void> {
+    const prefs: preferences.Preferences = await preferences.getPreferences(this.ctx, this.fileName);
+    await prefs.put('lan_url', lanUrl);
+    await prefs.put('lan_off', lanOff);
+    await prefs.put('lan_auto', lanAuto);
+    await prefs.flush();
+  }
+
   async clear(): Promise<void> {
     const prefs: preferences.Preferences = await preferences.getPreferences(this.ctx, this.fileName);
+    await prefs.delete('lan_url');
+    await prefs.delete('lan_off');
+    await prefs.delete('lan_auto');
+    await prefs.delete('access_nonce');
+    await prefs.delete('access_cipher');
+    await prefs.delete('access_expires');
     await prefs.delete('oauth_server');
     await prefs.delete('oauth_nonce');
     await prefs.delete('oauth_cipher');

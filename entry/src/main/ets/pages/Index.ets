@@ -1,7 +1,7 @@
 import { AppStorageV2 } from '@ohos.arkui.StateManagement';
 import router from '@ohos.router';
 import { DirectStore } from '../presentation/store/DirectStore';
-import { DeviceGroup, DeviceItem, RoomSummary } from '../data/direct/HomeAssistantModels';
+import { DeviceItem, RoomSummary } from '../data/direct/HomeAssistantModels';
 import { SystemTile } from '../presentation/ui/components/SystemTile';
 import { SystemHeader } from '../presentation/ui/components/SystemHeader';
 import { ControlTile } from '../presentation/ui/components/ControlTile';
@@ -11,6 +11,18 @@ import { Theme } from '../presentation/ui/Theme';
 import { actionIcon, entityIcon, roomIcon } from '../presentation/ui/Icons';
 import { safeError } from '../core/utils/SafeError';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
+
+// Bump when the usage terms below change: everyone is asked to accept them again.
+const TERMS_VERSION: number = 1;
+
+const TERMS: string[] = [
+  '腕上智家是开源的第三方应用，与 Home Assistant 官方及华为没有关联。',
+  '应用直接连接你自己的 Home Assistant，不经过任何第三方服务器，不收集、不上传任何个人数据。',
+  '登录后只保存可撤销的登录凭证，由系统安全模块加密存放在手表上；密码不保存。',
+  '远程控制设备可能因网络延迟或误触而产生意外结果，请留意设备的实际状态；因使用本应用造成的任何损失，开发者不承担责任。',
+  '本应用按 AGPL-3.0 开源协议提供，不附带任何形式的担保。'
+];
 
 interface RoomRouteParams {
   roomId: string;
@@ -47,6 +59,16 @@ class PhoneSetupRoute implements router.RouterOptions {
   url: string = 'pages/PhoneSetup';
 }
 
+interface WidgetRouteParams {
+  formId: string;
+}
+
+class WidgetRoute implements router.RouterOptions {
+  url: string = 'pages/WidgetSettings';
+  params?: WidgetRouteParams;
+  constructor(formId: string) { this.params = { formId: formId }; }
+}
+
 // Home cards, left to right. 我的家 opens first.
 const CARD_LISTS: string[] = ['favoritesList', 'roomsList', 'scenesList', 'moreList'];
 
@@ -60,6 +82,8 @@ struct Index {
   @Local private password: string = '';
   @Local private mfaCode: string = '';
   @Local private allowLocalHttp: boolean = false;
+  // Text field allowed to take focus (see beginEdit); '' = none.
+  @Local private editing: string = '';
   // Index into CARD_LISTS: 0 常用 · 1 我的家 · 2 场景 · 3 更多.
   @Local private page: number = 1;
   private readonly scroller: Scroller = new Scroller();
@@ -70,10 +94,55 @@ struct Index {
 
   aboutToAppear(): void {
     if (this.server.length === 0) this.server = this.store.lastServer;
+    this.page = this.store.startPage;
+  }
+
+  // Text fields take focus only when touched directly. Otherwise a tap anywhere in the focusable list
+  // (needed for the digital crown) hands focus to the first field and pops up the keyboard.
+  private beginEdit(field: string): void {
+    if (this.editing === field) return;
+    this.editing = field;
+    setTimeout(() => {
+      try {
+        this.getUIContext().getFocusController().requestFocus('input_' + field);
+      } catch (_) {
+        // The field is focusable now; a second tap focuses it.
+      }
+    }, 50);
+  }
+
+  private endEdit(field: string, editing: boolean): void {
+    if (!editing && this.editing === field) this.editing = '';
+  }
+
+  private async acceptTerms(): Promise<void> {
+    try {
+      await this.store.acceptTerms(TERMS_VERSION);
+    } catch (_) {
+      // Accepted for this session; asked again next time if it could not be saved.
+    }
+  }
+
+  private declineTerms(): void {
+    (this.getUIContext().getHostContext() as common.UIAbilityContext).terminateSelf();
   }
 
   onPageShow(): void {
     this.store.refreshIfStale(30000);
+    this.openRequestedWidget();
+  }
+
+  // A widget (or the system's "edit widget") asked to change its content.
+  @Monitor('store.pendingWidgetForm')
+  onWidgetRequest(): void {
+    this.openRequestedWidget();
+  }
+
+  private openRequestedWidget(): void {
+    const formId: string = this.store.pendingWidgetForm;
+    if (formId.length === 0 || !this.store.configured) return;
+    this.store.pendingWidgetForm = '';
+    this.getUIContext().getRouter().pushUrl(new WidgetRoute(formId), () => {});
   }
 
   private async connect(): Promise<void> {
@@ -123,9 +192,7 @@ struct Index {
 
   // A pinned primary entity is shown by its device name ("客厅空调", not "客厅空调 温控器").
   private favoriteTitle(item: DeviceItem): string {
-    const group: DeviceGroup | undefined = this.store.groups.find((candidate: DeviceGroup) =>
-      candidate.entityIds.includes(item.entityId));
-    return group && group.primaryEntityId === item.entityId ? group.name : item.name;
+    return this.store.favoriteName(item);
   }
 
   private canAct(item: DeviceItem): boolean {
@@ -137,6 +204,7 @@ struct Index {
     if (this.store.fetchedAt === 0) return '尚未同步';
     const time: string = new Date(this.store.fetchedAt).toLocaleTimeString();
     return (this.store.online ? '已更新 ' : '离线缓存 · 控制已禁用 ') + time +
+      (this.store.online && this.store.lanActive ? ' · 局域网' : '') +
       (this.store.credentialsPersisted ? '' : ' · 本次会话');
   }
 
@@ -152,7 +220,9 @@ struct Index {
 
   build() {
     Stack() {
-      if (this.store.configured) {
+      if (this.store.acceptedTerms < TERMS_VERSION) {
+        this.termsCard();
+      } else if (this.store.configured) {
         Swiper() {
           this.favoritesCard();
           this.roomsCard();
@@ -347,6 +417,34 @@ struct Index {
     .width('100%').height('100%');
   }
 
+  // First launch (and after the terms change): what the app does with data, and the disclaimer.
+  @Builder
+  termsCard() {
+    Stack() {
+      List({ scroller: this.scroller, space: 8 }) {
+        ListItem() { SystemHeader({ title: '使用须知' }) }
+        ForEach(TERMS, (line: string) => {
+          ListItem() { InfoText({ text: line, textSize: 13, textColor: Theme.TEXT_SUB }) }
+        }, (line: string) => line);
+        ListItem() {
+          WideButton({ label: '同意并继续', buttonColor: Theme.ACCENT, onTap: () => { this.acceptTerms(); } })
+        }
+        ListItem() {
+          WideButton({ label: '不同意', buttonColor: Theme.DANGER, onTap: () => this.declineTerms() })
+        }
+      }
+      .width('100%').height('100%')
+      .focusable(true).focusOnTouch(true)
+      .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .scrollBar(BarState.Off)
+      .contentEndOffset(100);
+      ArcScrollBar({ scroller: this.scroller, state: BarState.Auto })
+        .width('100%').height('100%')
+        .hitTestBehavior(HitTestMode.Transparent);
+    }
+    .width('100%').height('100%');
+  }
+
   @Builder
   loginCard() {
     Stack() {
@@ -359,6 +457,12 @@ struct Index {
             TextInput({ placeholder: '验证码', text: this.mfaCode })
               .type(InputType.Number).fontSize(16).placeholderFont({ size: 16 })
               .onChange((value: string) => { this.mfaCode = value; })
+              .id('input_mfa')
+              .focusable(this.editing === 'mfa')
+              .onTouch((event: TouchEvent) => {
+                if (event.type === TouchType.Down) this.beginEdit('mfa');
+              })
+              .onEditChange((editing: boolean) => this.endEdit('mfa', editing))
               .width('78%').height(48);
           }
           .width('100%').justifyContent(FlexAlign.Center);
@@ -384,6 +488,12 @@ struct Index {
                 if (value !== this.server) this.allowLocalHttp = false;
                 this.server = value;
               })
+              .id('input_server')
+              .focusable(this.editing === 'server')
+              .onTouch((event: TouchEvent) => {
+                if (event.type === TouchType.Down) this.beginEdit('server');
+              })
+              .onEditChange((editing: boolean) => this.endEdit('server', editing))
               .width('78%').height(48);
           }
           .width('100%').justifyContent(FlexAlign.Center);
@@ -393,6 +503,12 @@ struct Index {
             TextInput({ placeholder: '用户名', text: this.username })
               .fontSize(16).placeholderFont({ size: 16 })
               .onChange((value: string) => { this.username = value; })
+              .id('input_username')
+              .focusable(this.editing === 'username')
+              .onTouch((event: TouchEvent) => {
+                if (event.type === TouchType.Down) this.beginEdit('username');
+              })
+              .onEditChange((editing: boolean) => this.endEdit('username', editing))
               .width('78%').height(48);
           }
           .width('100%').justifyContent(FlexAlign.Center);
@@ -402,6 +518,12 @@ struct Index {
             TextInput({ placeholder: '密码', text: this.password })
               .type(InputType.Password).fontSize(16).placeholderFont({ size: 16 })
               .onChange((value: string) => { this.password = value; })
+              .id('input_password')
+              .focusable(this.editing === 'password')
+              .onTouch((event: TouchEvent) => {
+                if (event.type === TouchType.Down) this.beginEdit('password');
+              })
+              .onEditChange((editing: boolean) => this.endEdit('password', editing))
               .width('78%').height(48);
           }
           .width('100%').justifyContent(FlexAlign.Center);

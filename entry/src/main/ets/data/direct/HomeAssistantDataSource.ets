@@ -3,6 +3,22 @@ import { DeviceItem, DeviceGroup, HomeAssistantSnapshot, RoomSummary, UNASSIGNED
 import { loadRegistry, RegistrySnapshot, RegistryArea, RegistryDevice, RegistryEntity } from './RegistryLoader';
 import { HaSocket } from './HaSocket';
 
+// What the data source remembers across app launches, so a cold start can sync only the states of what
+// the watch shows (one small request) instead of re-reading the whole registry and every entity.
+export interface DataSourceCache {
+  registry: RegistrySnapshot;
+  registryAt: number;
+  wantedIds: string[];
+}
+
+// The registry (areas, devices, entities) changes rarely; re-reading it often costs a lot over the phone's
+// Bluetooth on a large install.
+const REGISTRY_MAX_AGE_MS: number = 1800000;
+// An idle shared WebSocket is closed after this long.
+const SESSION_IDLE_MS: number = 45000;
+// After the WebSocket failed (proxy without WebSocket support, …), use REST for a while.
+const SOCKET_BACKOFF_MS: number = 60000;
+
 // Primary-entity priority inside a physical device; earlier entries become the device's main control.
 // Appliance domains rank before plain switches: vendor integrations often attach many auxiliary
 // switches (child lock, indicator light, eco mode…) to an air conditioner or lamp.
@@ -18,11 +34,16 @@ export class HomeAssistantDataSource {
   private entityRegistry: Map<string, RegistryEntity> = new Map<string, RegistryEntity>();
   private deviceRegistry: Map<string, RegistryDevice> = new Map<string, RegistryDevice>();
   private registry: RegistrySnapshot | undefined = undefined;
-  // Registry is re-read every 10 minutes; after a failure it is retried after 1 minute.
+  // When the registry was read, and when it is due again (after a failure: retried after 1 minute).
+  private registryAt: number = 0;
   private registryRetryAt: number = 0;
   private registryError: string = '';
-  // Entities the watch actually shows, learned from the last full sync. Later syncs request only these.
+  // Entities the watch actually shows, learned from the last sync. Later syncs request only these.
   private wantedIds: string[] = [];
+  // Shared WebSocket session (see HaSocket) and its idle timer.
+  private live: HaSocket | undefined = undefined;
+  private idleTimer: number = -1;
+  private socketBackoffUntil: number = 0;
 
   constructor(server: string, token: string) {
     this.client = new HaDirectClient(server, token);
@@ -30,31 +51,129 @@ export class HomeAssistantDataSource {
     this.token = token;
   }
 
-  async load(): Promise<HomeAssistantSnapshot> {
-    // One WebSocket session per sync: registry (every 10 min) + compact entity states. The full entity list
-    // is requested together with a registry refresh (to discover new entities); otherwise only wantedIds.
-    // If the socket fails, states fall back to the REST list so the watch always syncs.
-    const refreshRegistry: boolean = Date.now() >= this.registryRetryAt;
-    let registryTried: boolean = false;
-    let states: HaEntityState[] | undefined = undefined;
+  // Switches address (LAN ↔ remote) or access token while keeping the registry and the wanted entities.
+  retarget(server: string, token: string): void {
+    if (server === this.server && token === this.token) return;
+    this.dropSession();
+    this.client = new HaDirectClient(server, token);
+    this.server = server;
+    this.token = token;
+    this.socketBackoffUntil = 0;
+  }
+
+  importCache(cache: DataSourceCache): void {
+    if (!cache.registry || !Array.isArray(cache.registry.entities)) return;
+    this.registry = cache.registry;
+    this.registryAt = cache.registryAt;
+    this.registryRetryAt = cache.registryAt + REGISTRY_MAX_AGE_MS;
+    this.wantedIds = Array.isArray(cache.wantedIds) ? cache.wantedIds : [];
+  }
+
+  exportCache(): DataSourceCache | undefined {
+    if (!this.registry) return undefined;
+    return { registry: this.registry, registryAt: this.registryAt, wantedIds: this.wantedIds };
+  }
+
+  hasRegistry(): boolean {
+    return this.registry !== undefined && this.wantedIds.length > 0;
+  }
+
+  registryStale(): boolean {
+    return Date.now() >= this.registryRetryAt;
+  }
+
+  // Makes the next load() re-read the registry (Settings → 重新同步).
+  forceRegistry(): void {
+    this.registryRetryAt = 0;
+  }
+
+  close(): void {
+    this.dropSession();
+  }
+
+  // The shared session, opened on demand. Undefined while the WebSocket is backing off.
+  private async session(): Promise<HaSocket | undefined> {
+    if (Date.now() < this.socketBackoffUntil) return undefined;
+    if (this.live && this.live.isOpen()) {
+      this.touchSession();
+      return this.live;
+    }
+    this.dropSession();
     const socket: HaSocket = new HaSocket(this.token);
     try {
       await socket.open(this.server);
-      if (refreshRegistry) {
-        registryTried = true;
-        try {
-          this.registry = await loadRegistry(socket);
-          this.registryError = '';
-          this.registryRetryAt = Date.now() + 600000;
-        } catch (error) {
-          this.registryFailed(error as Object);
-        }
-      }
-      states = await socket.entityStates(refreshRegistry || this.wantedIds.length === 0 ? undefined : this.wantedIds);
     } catch (error) {
+      try { await socket.close(); } catch (_) {}
+      this.socketBackoffUntil = Date.now() + SOCKET_BACKOFF_MS;
+      throw error as Error;
+    }
+    this.live = socket;
+    this.touchSession();
+    return socket;
+  }
+
+  private touchSession(): void {
+    if (this.idleTimer >= 0) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => this.dropSession(), SESSION_IDLE_MS);
+  }
+
+  private dropSession(): void {
+    if (this.idleTimer >= 0) clearTimeout(this.idleTimer);
+    this.idleTimer = -1;
+    const socket: HaSocket | undefined = this.live;
+    this.live = undefined;
+    if (socket) socket.close().catch(() => {});
+  }
+
+  // Entities worth asking HA about after a registry refresh: what the watch showed last time plus every
+  // registry entity of a shown domain (to discover new devices) — instead of the full state list.
+  private candidateIds(): string[] | undefined {
+    if (!this.registry || this.wantedIds.length === 0) return undefined;
+    const ids: string[] = this.wantedIds.slice();
+    const services: Map<string, RegistryDevice> = new Map<string, RegistryDevice>();
+    this.registry.devices.forEach((device: RegistryDevice) => {
+      if (device.entry_type === 'service') services.set(device.id, device);
+    });
+    this.registry.entities.forEach((entity: RegistryEntity) => {
+      if (entity.disabled_by || entity.hidden_by) return;
+      if (entity.entity_category === 'diagnostic' || entity.entity_category === 'config') return;
+      if (entity.device_id && services.has(entity.device_id)) return;
+      if (!isShownDomain(entity.entity_id.split('.')[0])) return;
+      if (!ids.includes(entity.entity_id)) ids.push(entity.entity_id);
+    });
+    return ids;
+  }
+
+  // `quick`: states of the shown entities only, even if the registry is due (used right after a cold start
+  // with a cached registry; the caller refreshes the registry in the background afterwards).
+  async load(quick: boolean = false): Promise<HomeAssistantSnapshot> {
+    // Over the shared WebSocket: the registry when due, then compact states of the shown entities (plus
+    // the registry's candidates after a registry refresh; everything only on the very first sync).
+    // If the socket fails, states fall back to the REST list so the watch always syncs.
+    const refreshRegistry: boolean = !(quick && this.hasRegistry()) && Date.now() >= this.registryRetryAt;
+    let registryTried: boolean = false;
+    let states: HaEntityState[] | undefined = undefined;
+    try {
+      const socket: HaSocket | undefined = await this.session();
+      if (socket) {
+        if (refreshRegistry) {
+          registryTried = true;
+          try {
+            this.registry = trimRegistry(await loadRegistry(socket));
+            this.registryError = '';
+            this.registryAt = Date.now();
+            this.registryRetryAt = this.registryAt + REGISTRY_MAX_AGE_MS;
+          } catch (error) {
+            this.registryFailed(error as Object);
+          }
+        }
+        const ids: string[] | undefined = refreshRegistry ? this.candidateIds() :
+          (this.wantedIds.length > 0 ? this.wantedIds : undefined);
+        states = await socket.entityStates(ids);
+      }
+    } catch (error) {
+      this.dropSession();
       if (refreshRegistry && !registryTried) this.registryFailed(error as Object);
-    } finally {
-      await socket.close();
     }
     if (!states) states = await this.client.listStates();
     const registry: RegistrySnapshot | undefined = this.registry;
@@ -116,12 +235,40 @@ export class HomeAssistantDataSource {
   }
 
   async readEntity(entityId: string): Promise<DeviceItem> {
+    try {
+      const socket: HaSocket | undefined = await this.session();
+      if (socket) {
+        const states: HaEntityState[] = await socket.entityStates([entityId]);
+        const found: HaEntityState | undefined = states.find((state: HaEntityState) => state.entity_id === entityId);
+        if (found) return this.mapState(found);
+      }
+    } catch (_) {
+      this.dropSession();
+    }
     return this.mapState(await this.client.readEntity(entityId));
   }
 
   async callService(domain: string, service: string, entityId: string,
     data?: ServiceData): Promise<void> {
-    await this.client.callService(domain, service, entityId, data);
+    const allowed: string[] | undefined = ALLOWED_SERVICES[domain];
+    if (!allowed || !allowed.includes(service)) throw new Error('不支持的设备操作');
+    let socket: HaSocket | undefined = undefined;
+    try {
+      socket = await this.session();
+    } catch (_) {
+      socket = undefined;
+    }
+    if (!socket) {
+      await this.client.callService(domain, service, entityId, data);
+      return;
+    }
+    // Once sent, a command is never repeated over REST: it could switch a device twice.
+    try {
+      await socket.callService(domain, service, entityId, data);
+    } catch (error) {
+      this.dropSession();
+      throw error as Error;
+    }
   }
 
   private mapState(state: HaEntityState): DeviceItem {
@@ -196,13 +343,34 @@ export class HomeAssistantDataSource {
 
   private isShownState(state: HaEntityState): boolean {
     const domain: string = state.entity_id.split('.')[0];
-    if (domain !== 'sensor' && domain !== 'binary_sensor' && ALLOWED_SERVICES[domain] === undefined) {
-      return false;
-    }
+    if (!isShownDomain(domain)) return false;
     if (domain === 'select' || domain === 'input_select') {
       return state.state !== 'unavailable' && state.state !== 'unknown' &&
         (state.attributes?.options?.length ?? 0) > 0;
     }
     return true;
   }
+}
+
+function isShownDomain(domain: string): boolean {
+  return domain === 'sensor' || domain === 'binary_sensor' || ALLOWED_SERVICES[domain] !== undefined;
+}
+
+// Keeps only the registry fields and entities the watch uses: smaller in memory and in the cache.
+function trimRegistry(full: RegistrySnapshot): RegistrySnapshot {
+  return {
+    areas: full.areas.map((area: RegistryArea): RegistryArea =>
+      ({ area_id: area.area_id, name: area.name, icon: area.icon })),
+    devices: full.devices.map((device: RegistryDevice): RegistryDevice => ({
+      id: device.id, area_id: device.area_id, name: device.name, name_by_user: device.name_by_user,
+      entry_type: device.entry_type
+    })),
+    entities: full.entities
+      .filter((entity: RegistryEntity) => isShownDomain(entity.entity_id.split('.')[0]))
+      .map((entity: RegistryEntity): RegistryEntity => ({
+        entity_id: entity.entity_id, name: entity.name, original_name: entity.original_name,
+        area_id: entity.area_id, device_id: entity.device_id, disabled_by: entity.disabled_by,
+        hidden_by: entity.hidden_by, entity_category: entity.entity_category
+      }))
+  };
 }

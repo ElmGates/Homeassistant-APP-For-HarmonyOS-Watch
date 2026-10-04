@@ -1,9 +1,11 @@
 import { webSocket } from '@kit.NetworkKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { util } from '@kit.ArkTS';
-import { HaEntityAttributes, HaEntityState } from './HaDirectClient';
+import { HaEntityAttributes, HaEntityState, ServiceData } from './HaDirectClient';
 
-// One short-lived WebSocket session per sync: authenticate, run a few commands, close.
+// A WebSocket session to HA: authenticate, then run commands. The data source keeps one open while the
+// app is in use, so syncs and device commands share one TLS connection (several handshakes over the
+// phone's Bluetooth add seconds).
 // Large replies (registry lists, entity states) arrive in several 'message' callbacks over wss, so text is
 // buffered until it forms one complete JSON envelope.
 
@@ -16,10 +18,19 @@ export interface WsEnvelope {
   event?: object;
 }
 
+interface WsTarget {
+  entity_id: string;
+}
+
 interface WsCommand {
   id: number;
   type: string;
   entity_ids?: string[];
+  subscription?: number;
+  domain?: string;
+  service?: string;
+  service_data?: ServiceData;
+  target?: WsTarget;
 }
 
 interface Waiter {
@@ -57,6 +68,7 @@ export class HaSocket {
   private events: Map<number, Waiter> = new Map<number, Waiter>();
   private authResolve: (() => void) | undefined = undefined;
   private authReject: ((error: Error) => void) | undefined = undefined;
+  private closed: boolean = false;
 
   constructor(token: string) {
     this.token = token;
@@ -72,10 +84,19 @@ export class HaSocket {
         util.TextDecoder.create('utf-8').decodeToString(new Uint8Array(data as ArrayBuffer));
       this.onChunk(text);
     });
+    socket.on('close', () => this.onClosed());
+    socket.on('error', () => this.onClosed());
     const auth: Promise<void> = new Promise<void>((resolve: () => void, reject: (error: Error) => void) => {
       this.authResolve = resolve;
       this.authReject = reject;
     });
+    if (url.startsWith('ws://')) {
+      // Plain ws:// is only used for LAN addresses, which answer fast or not at all (the phone just left
+      // home): bound the connect as well, so the sync falls back to the remote address quickly.
+      const connected: Promise<void> = socket.connect(url).then(() => auth);
+      await this.withTimeout<void>(connected, 6000, '局域网连接超时');
+      return;
+    }
     await socket.connect(url);
     await this.withTimeout<void>(auth, REQUEST_TIMEOUT_MS, 'WebSocket 认证超时');
   }
@@ -88,9 +109,22 @@ export class HaSocket {
     return await result;
   }
 
+  isOpen(): boolean {
+    return this.socket !== undefined && !this.closed;
+  }
+
+  // Runs a service on one entity and waits for HA to accept it.
+  async callService(domain: string, service: string, entityId: string, data?: ServiceData): Promise<void> {
+    const id: number = this.nextId++;
+    const result: Promise<WsEnvelope> = this.wait(this.results, id, 'HA 未确认操作');
+    await this.send({ id: id, type: 'call_service', domain: domain, service: service,
+      service_data: data, target: { entity_id: entityId } });
+    await result;
+  }
+
   // Current state of the given entities (all entities when ids is undefined), via subscribe_entities.
-  // The first event of that subscription carries the full compact state; the socket is closed afterwards,
-  // which ends the subscription.
+  // The first event of that subscription carries the full compact state; the subscription is then
+  // cancelled so the open session does not keep receiving changes.
   async entityStates(ids?: string[]): Promise<HaEntityState[]> {
     const id: number = this.nextId++;
     const result: Promise<WsEnvelope> = this.wait(this.results, id, 'HA 状态请求超时');
@@ -103,6 +137,7 @@ export class HaSocket {
       const envelope: WsEnvelope = await first;
       const event: EntitiesEvent | undefined = envelope.event as EntitiesEvent | undefined;
       const added: Record<string, CompactState> = event?.a ?? NO_STATES;
+      this.unsubscribe(id);
       return Object.keys(added).map((entityId: string) => {
         const compact: CompactState = added[entityId];
         const state: HaEntityState = { entity_id: entityId, state: compact.s, attributes: compact.a };
@@ -113,7 +148,28 @@ export class HaSocket {
     }
   }
 
+  // Fire and forget: a lost unsubscribe only means a few ignored change events.
+  private unsubscribe(subscription: number): void {
+    const id: number = this.nextId++;
+    this.wait(this.results, id, '').catch(() => {});
+    this.send({ id: id, type: 'unsubscribe_events', subscription: subscription }).catch(() => {});
+  }
+
+  // The server or the network closed the connection: fail pending requests right away instead of
+  // letting each wait for its timeout.
+  private onClosed(): void {
+    if (this.closed) return;
+    this.closed = true;
+    const failure: Error = new Error('HA 连接已断开');
+    this.results.forEach((waiter: Waiter) => { clearTimeout(waiter.timer); waiter.reject(failure); });
+    this.events.forEach((waiter: Waiter) => { clearTimeout(waiter.timer); waiter.reject(failure); });
+    this.results.clear();
+    this.events.clear();
+    this.authReject?.(failure);
+  }
+
   async close(): Promise<void> {
+    this.closed = true;
     this.results.forEach((waiter: Waiter) => clearTimeout(waiter.timer));
     this.events.forEach((waiter: Waiter) => clearTimeout(waiter.timer));
     this.results.clear();
@@ -127,7 +183,7 @@ export class HaSocket {
   }
 
   private async send(command: WsCommand): Promise<void> {
-    if (!this.socket) throw new Error('HA 连接已关闭');
+    if (!this.socket || this.closed) throw new Error('HA 连接已关闭');
     await this.socket.send(JSON.stringify(command));
   }
 

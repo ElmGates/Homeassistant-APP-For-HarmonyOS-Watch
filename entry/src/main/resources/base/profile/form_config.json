@@ -1,0 +1,68 @@
+{
+  "forms": [
+    {
+      "name": "favorites_large",
+      "displayName": "$string:widget_name",
+      "description": "$string:widget_desc",
+      "src": "./ets/widget/pages/FavoritesCard.ets",
+      "uiSyntax": "arkts",
+      "isDynamic": true,
+      "isDefault": true,
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "defaultDimension": "3*3",
+      "supportDimensions": ["3*3"],
+      "supportShapes": ["rect", "circle"],
+      "previewImages": ["$media:widget_preview_large"],
+      "formConfigAbility": "ability://EntryAbility"
+    },
+    {
+      "name": "favorites",
+      "displayName": "$string:widget_name_small",
+      "description": "$string:widget_desc",
+      "src": "./ets/widget/pages/FavoritesSmallCard.ets",
+      "uiSyntax": "arkts",
+      "isDynamic": true,
+      "isDefault": false,
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "defaultDimension": "2*2",
+      "supportDimensions": ["2*2"],
+      "supportShapes": ["rect", "circle"],
+      "previewImages": ["$media:widget_preview_small"],
+      "formConfigAbility": "ability://EntryAbility"
+    },
+    {
+      "name": "single_wide",
+      "displayName": "$string:widget_name_wide",
+      "description": "$string:widget_desc_single",
+      "src": "./ets/widget/pages/SingleWideCard.ets",
+      "uiSyntax": "arkts",
+      "isDynamic": true,
+      "isDefault": false,
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "defaultDimension": "1*2",
+      "supportDimensions": ["1*2"],
+      "supportShapes": ["rect"],
+      "previewImages": ["$media:widget_preview_wide"],
+      "formConfigAbility": "ability://EntryAbility"
+    },
+    {
+      "name": "single",
+      "displayName": "$string:widget_name_round",
+      "description": "$string:widget_desc_single",
+      "src": "./ets/widget/pages/SingleRoundCard.ets",
+      "uiSyntax": "arkts",
+      "isDynamic": true,
+      "isDefault": false,
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "defaultDimension": "1*1",
+      "supportDimensions": ["1*1"],
+      "supportShapes": ["circle", "rect"],
+      "previewImages": ["$media:widget_preview_round"],
+      "formConfigAbility": "ability://EntryAbility"
+    }
+  ]
+}

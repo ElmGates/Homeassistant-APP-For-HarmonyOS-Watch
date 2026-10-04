@@ -67,6 +67,11 @@ export const ALLOWED_SERVICES: Record<string, string[]> = {
   'vacuum': ['start', 'pause', 'return_to_base']
 };
 
+// Part of /api/config: the LAN address configured in HA (null when it is left on automatic).
+export interface HaConfigInfo {
+  internal_url?: string | null;
+}
+
 interface ServicePayload extends ServiceData {
   entity_id: string;
 }
@@ -74,6 +79,8 @@ interface ServicePayload extends ServiceData {
 export class HaDirectClient {
   private baseUrl: string;
   private token: string;
+  // LAN addresses never go through the system proxy.
+  private direct: boolean;
 
   constructor(baseUrl: string, token: string) {
     const cleanUrl: string = baseUrl.trim().replace(/\/+$/, '');
@@ -87,6 +94,7 @@ export class HaDirectClient {
     }
     this.baseUrl = cleanUrl;
     this.token = token.trim();
+    this.direct = localHttp;
   }
 
   async readEntity(entityId: string): Promise<HaEntityState> {
@@ -96,6 +104,10 @@ export class HaDirectClient {
       throw new Error('HA 返回了不正确的实体状态');
     }
     return parsed;
+  }
+
+  async readConfig(): Promise<HaConfigInfo> {
+    return JSON.parse(await this.getWithRetry('/api/config', 15000)) as HaConfigInfo;
   }
 
   async listStates(): Promise<HaEntityState[]> {
@@ -153,8 +165,10 @@ export class HaDirectClient {
         },
         extraData: body ?? '',
         expectDataType: http.HttpDataType.STRING,
-        // Includes the TLS handshake, which is slow over Bluetooth via the phone and overseas CDNs.
-        connectTimeout: 30000,
+        usingProxy: !this.direct,
+        // Includes the TLS handshake, which is slow over Bluetooth via the phone and overseas CDNs. A LAN
+        // address answers fast or not at all (the phone just left home): give up early and fall back.
+        connectTimeout: this.direct ? 5000 : 30000,
         readTimeout: readTimeout
       });
       if (response.responseCode === 401) {

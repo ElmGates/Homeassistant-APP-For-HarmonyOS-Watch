@@ -39,6 +39,21 @@
           }
         ]
       }
+    ],
+    "extensionAbilities": [
+      {
+        "name": "FavoritesFormAbility",
+        "srcEntry": "./ets/formability/FavoritesFormAbility.ets",
+        "label": "$string:widget_name",
+        "description": "$string:widget_desc",
+        "type": "form",
+        "metadata": [
+          {
+            "name": "ohos.extension.form",
+            "resource": "$profile:form_config"
+          }
+        ]
+      }
     ]
   }
 }

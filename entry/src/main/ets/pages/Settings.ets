@@ -6,9 +6,18 @@ import { SystemHeader } from '../presentation/ui/components/SystemHeader';
 import { InfoText, WideButton } from '../presentation/ui/components/Controls';
 import { Theme } from '../presentation/ui/Theme';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { localNetworkSummary } from '../data/diag/NetworkDiagnostics';
 
 class DiagnoseRoute implements router.RouterOptions {
   url: string = 'pages/NetworkDiagnose';
+}
+
+class WidgetRoute implements router.RouterOptions {
+  url: string = 'pages/WidgetSettings';
+}
+
+class LanRoute implements router.RouterOptions {
+  url: string = 'pages/LanAccess';
 }
 
 @Entry
@@ -18,7 +27,13 @@ struct Settings {
     AppStorageV2.connect(DirectStore, 'directStore', () => new DirectStore())!;
   @Local private confirmClear: boolean = false;
   @Local private errorText: string = '';
+  @Local private networkText: string = '';
+  private readonly startNames: string[] = ['常用', '我的家', '场景', '更多'];
   private readonly scroller: Scroller = new Scroller();
+
+  onPageShow(): void {
+    this.networkText = localNetworkSummary();
+  }
 
   private async clearConnection(): Promise<void> {
     if (!this.confirmClear) {
@@ -45,6 +60,16 @@ struct Settings {
         }
         .width('100%').justifyContent(FlexAlign.Center);
       }
+      ListItem() {
+        // Tap to re-read after switching network (Wi‑Fi ↔ phone Bluetooth).
+        Row() {
+          Text('本机 ' + this.networkText)
+            .width('78%').fontSize(13).fontColor(Theme.TEXT_SUB)
+            .textAlign(TextAlign.Center);
+        }
+        .width('100%').justifyContent(FlexAlign.Center)
+        .onClick(() => { this.networkText = localNetworkSummary(); });
+      }
       if (this.store.roomSource !== 'registry' && this.store.registryError.length > 0) {
         ListItem() {
           InfoText({ text: '原因：' + this.store.registryError, textSize: 12, textColor: Theme.WARN })
@@ -63,10 +88,24 @@ struct Settings {
       }
       ListItem() {
         WideButton({ label: '重新同步', buttonColor: Theme.ACCENT, canTap: !this.store.loading,
-          onTap: () => { this.store.sync(); } })
+          onTap: () => { this.store.fullSync(); } })
       }
       ListItem() {
-        WideButton({ label: '网络诊断',
+        // Each tap moves to the next card; takes effect at the next launch.
+        WideButton({ label: '启动页：' + (this.startNames[this.store.startPage] ?? '我的家'),
+          onTap: () => { this.store.setStartPage((this.store.startPage + 1) % 4).catch(() => {}); } })
+      }
+      ListItem() {
+        WideButton({ label: this.store.lanActive ? '局域网直连 · 使用中' : '局域网直连',
+          buttonColor: this.store.lanActive ? Theme.SELECTED : Theme.SECONDARY,
+          onTap: () => { this.getUIContext().getRouter().pushUrl(new LanRoute(), () => {}); } })
+      }
+      ListItem() {
+        WideButton({ label: '表盘卡片',
+          onTap: () => { this.getUIContext().getRouter().pushUrl(new WidgetRoute(), () => {}); } })
+      }
+      ListItem() {
+        WideButton({ label: '连接诊断',
           onTap: () => { this.getUIContext().getRouter().pushUrl(new DiagnoseRoute(), () => {}); } })
       }
       if (this.store.favorites.length > 0) {

@@ -6,6 +6,8 @@
 
 - 手表使用自身网络直连 Home Assistant；首次用 HA 内置账号的用户名和密码登录，换取短期访问凭证，并在到期时自动刷新。密码不写入本地存储。
 - **首页「常用」**：在任意设备详情页点「☆ 加入常用」，即可在首页一键控制（开关、执行场景、按按钮、开合窗帘、播放/暂停），无需进入房间。
+- **局域网直连**：在家时（手表连 Wi‑Fi 或经手机蓝牙上网均可）自动改用 HA 的局域网地址，出门自动切回远程 HTTPS 地址（设置 → 局域网直连）。
+- **表盘卡片**：在手表卡片列表中添加「常用设备」卡片，提供大、小、长条、圆形四种尺寸，默认显示常用设备，每张卡片也可以在「设置 → 表盘卡片」中单独选择设备或场景，不用打开应用。
 - 首页读取 HA 的区域、设备和实体注册表，按房间显示**物理设备**数量。房间内按 `device_id` 合并同一设备的多个实体；只有一个可控实体的设备在行内直接给出快捷按钮。
 - **杂项实体过滤**：厂商集成常给一台设备挂几十个实体。手表端按以下规则收敛：
   - 不显示：禁用、隐藏、诊断（diagnostic）、配置（config）实体；不可用的下拉框；备份/天气/翻译等「服务型」设备；自动化等不支持的类型。
@@ -25,6 +27,9 @@
 - 可撤销的刷新凭证优先使用 HUKS AES-GCM 密钥加密后保存；若模拟器的安全存储不可用，连接仅在本次会话有效。房间、状态快照和常用列表作为非敏感数据保存；更换服务器时一并清除。
 - 圆屏原生 `ArcScrollBar` + 表冠滚动；在模拟器中检查了居中布局。
 
+- **首次启动须知**：首次打开时说明数据处理方式与免责声明，同意后才能使用。
+- **自定义启动页**：设置中可选择打开应用时先显示「常用」「我的家」「场景」或「更多」。
+
 ## 代码结构
 
 ```
@@ -33,6 +38,9 @@ entry/src/main/ets
 ├─ data/direct/                    HA 认证、REST、注册表 WebSocket、实体→设备分组
 ├─ data/security/CredentialStore   HUKS 加密保存刷新凭证
 ├─ data/cache/                     状态快照缓存、常用设备列表
+├─ data/widget/WidgetBridge       应用与表盘卡片之间共享的常用设备数据
+├─ formability/                    表盘卡片：点按执行、定时刷新
+├─ widget/pages/                   表盘卡片界面
 ├─ presentation/store/DirectStore  全局状态与所有操作
 ├─ presentation/ui/                主题色、设备类型文案/图标/快捷操作、通用组件
 └─ pages/                          首页、房间、设备、实体详情、设置
@@ -81,10 +89,19 @@ export DEVECO_SDK_HOME=/Applications/DevEco-Studio.app/Contents/sdk
 
 应用通过 HA `/auth/login_flow`、`/auth/token` 完成授权及刷新，不再要求手动创建长期访问令牌。更换服务器或清除数据时会清除本地刷新凭证，并尽力向 HA 撤销；如果当时离线，请在 HA 个人资料中撤销该会话。
 
+## 设备兼容性说明
+
+Home Assistant 的设备和集成五花八门：同一类设备，不同厂商、不同集成上报的实体、状态和属性往往差别很大，有的设备一台就挂了几十个实体。腕上智家按 HA 的通用规则做了归类、过滤和快捷操作，**无法保证 100% 适配所有设备**。
+
+遇到显示不对、操作没反应或被误过滤的设备：
+
+- 欢迎在 [Issues](https://github.com/ElmGates/Homeassistant-APP-For-HarmonyOS-Watch/issues) 中反馈（请隐去设备名、地址等个人信息）；
+- 也可以按 AGPL-3.0 协议自行修改源码：设备归类与过滤在 `entry/src/main/ets/data/direct/HomeAssistantDataSource.ets`，状态文案与快捷操作在 `entry/src/main/ets/presentation/ui/DomainUi.ets`，允许调用的服务在 `HaDirectClient.ets` 的 `ALLOWED_SERVICES`。
+
 ## 验证状态与限制
 
 - 已在 HUAWEI WATCH 5（HarmonyOS 6.1）真机上，分别通过 Wi‑Fi 和蓝牙（经手机网络）连接 Home Assistant 完成控制。
-- 手表经蓝牙使用手机网络时，如果 HA 经海外 CDN 访问，TLS 握手可能很慢。可在应用的「设置 → 网络诊断」中逐项查看耗时，并参考[远程访问安全指南](https://watch.superjia.org/security.html)选择更快的远程访问方式。
+- 手表经蓝牙使用手机网络时，如果 HA 经海外 CDN 访问，TLS 握手可能很慢。在家时可开启「局域网直连」；也可在「设置 → 连接诊断」中逐项查看耗时，并参考[远程访问安全指南](https://watch.superjia.org/security.html)选择更快的远程访问方式。
 - 「用手机填写」需要手表连接 Wi‑Fi 且与手机处于同一局域网，模拟器无法使用。
 - 尚未支持：多个双重验证模块的复杂登录流程、实时状态推送（目前在打开应用或页面时按需同步）。
 

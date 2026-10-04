@@ -50,13 +50,17 @@ export interface LoginStep {
 export class HaAuthClient {
   readonly server: string;
   private readonly clientId: string;
+  private readonly direct: boolean;
 
-  constructor(server: string) {
+  // `server` is the address requests go to; `clientServer` the address the login was made with (HA ties
+  // refresh tokens to that client_id), when the request goes through the LAN address instead.
+  constructor(server: string, clientServer?: string) {
     this.server = server.trim().replace(/\/+$/, '');
     const secure: boolean = /^https:\/\/[a-z0-9.-]+(?::[0-9]{1,5})?$/i.test(this.server);
     const local: boolean = /^http:\/\/(?:(?:10|127|192\.168)\.[0-9.]+|172\.(?:1[6-9]|2[0-9]|3[01])\.[0-9.]+|localhost|[a-z0-9-]+\.local)(?::[0-9]{1,5})?$/i.test(this.server);
     if (!secure && !local) throw new Error('请输入 HTTPS 地址，或局域网 HTTP 地址');
-    this.clientId = this.server + '/';
+    this.direct = local;
+    this.clientId = (clientServer ? clientServer.trim().replace(/\/+$/, '') : this.server) + '/';
   }
 
   async login(username: string, password: string, allowLocalHttp: boolean): Promise<LoginStep> {
@@ -139,7 +143,8 @@ export class HaAuthClient {
         header: { 'Content-Type': contentType },
         extraData: body ?? '',
         expectDataType: http.HttpDataType.STRING,
-        connectTimeout: 30000,
+        usingProxy: !this.direct,
+        connectTimeout: this.direct ? 5000 : 30000,
         readTimeout: 20000
       });
       if (response.responseCode === 400 && path === '/auth/token') {
