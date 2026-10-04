@@ -1,6 +1,6 @@
 import { connection, http } from '@kit.NetworkKit';
 import { HaSocket } from '../direct/HaSocket';
-import { answersLikeHa } from '../direct/LanRoute';
+import { lanProbe, onLanCapableNetwork } from '../direct/LanRoute';
 import { safeError } from '../../core/utils/SafeError';
 
 // Step-by-step connectivity check shown on the 连接诊断 page. Each step reports ok/failed, duration and a
@@ -81,9 +81,20 @@ export class NetworkDiagnostics {
   async run(): Promise<void> {
     this.networkType();
     if (this.online) {
-      if (this.lanUrl) await this.lan();
-      this.dnsOk = await this.dns();
-      if (this.dnsOk) this.httpsOk = await this.https();
+      if (this.lanUrl && !onLanCapableNetwork()) {
+        // Same rule as the app (LanRoute): the phone's Bluetooth relay does not reach the LAN.
+        this.report({ title: '局域网地址', ok: true, ms: 0,
+          detail: '未使用：手表经手机蓝牙上网时无法访问局域网（系统限制），连接 Wi‑Fi 后自动使用' });
+      } else if (this.lanUrl) {
+        await this.lan();
+      }
+      if (this.lanOk) {
+        // The app uses the LAN address now: the remote path is not involved, so it is not tested.
+        this.report({ title: '远程地址', ok: true, detail: '未测试：正在使用局域网直连', ms: 0 });
+      } else {
+        this.dnsOk = await this.dns();
+        if (this.dnsOk) this.httpsOk = await this.https();
+      }
       if (this.lanOk || this.httpsOk) {
         const token: string = await this.auth();
         if (token) await this.socketAndLatency(token);
@@ -117,12 +128,14 @@ export class NetworkDiagnostics {
     }
   }
 
-  // The LAN address: reachable and really a Home Assistant? (No token is sent.)
+  // The LAN address (only on the watch's own Wi-Fi): reachable and really a Home Assistant? No token is
+  // sent; only reachability counts. The concrete reason (timeout, refused, HTTP code…) helps tell "this
+  // Wi-Fi is not the home network" from "HA's LAN address changed".
   private async lan(): Promise<void> {
     const start: number = Date.now();
-    this.lanOk = await answersLikeHa(this.lanUrl);
-    this.step('局域网地址', start, this.lanOk,
-      this.lanOk ? '可以直连' : '连不上：不在家，或 HA 的局域网 IP 已变化');
+    const failure: string = await lanProbe(this.lanUrl);
+    this.lanOk = failure.length === 0;
+    this.step('局域网地址', start, this.lanOk, this.lanOk ? '可以直连' : '连不上：' + failure);
   }
 
   private async dns(): Promise<boolean> {
@@ -228,10 +241,13 @@ export class NetworkDiagnostics {
     } else if (!this.socketOk) {
       ok = false;
       text = 'WebSocket 被拦截：检查反向代理是否放行 WebSocket（Upgrade 头）。应用会自动改用较慢的 HTTP 方式。';
+    } else if (this.viaBluetooth && (this.httpsMs > 3000 || this.pingMs > 500)) {
+      text = '经手机蓝牙上网时只能通过互联网访问远程地址，速度较慢。在家让手表连接家里的 Wi‑Fi，' +
+        (this.lanUrl ? '会自动使用局域网直连。' : '并在设置中开启「局域网直连」，会快很多。');
     } else if (!this.lanUrl && (this.httpsMs > 3000 || this.pingMs > 500)) {
-      text = '远程连接较慢' + (this.viaBluetooth ? '（经手机蓝牙）' : '') + '：在家时可在设置中开启「局域网直连」。';
-    } else if (this.lanUrl && !this.lanOk) {
-      text = '局域网地址连不上，正在使用远程地址。在家也连不上时，请检查局域网直连中的地址。';
+      text = '远程连接较慢：在家让手表连接家里的 Wi‑Fi，并在设置中开启「局域网直连」。';
+    } else if (this.lanUrl && !this.lanOk && !this.viaBluetooth) {
+      text = '局域网地址连不上，正在通过互联网使用远程地址。连着家里的 Wi‑Fi 也连不上时，请检查局域网直连中的地址。';
     } else {
       text = '连接正常。';
     }

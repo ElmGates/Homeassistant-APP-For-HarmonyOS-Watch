@@ -12,7 +12,8 @@ import { FavoritesStore } from '../../data/cache/FavoritesStore';
 import { LoginHintStore } from '../../data/cache/LoginHintStore';
 import { isMajorDomain, isToggleDomain, quickAction, QuickAction } from '../ui/DomainUi';
 import { WidgetBridge, WidgetForm, WidgetItem } from '../../data/widget/WidgetBridge';
-import { chooseBaseUrl, detectLanUrl, forgetRoute, lanFailed, normalizeLanUrl } from '../../data/direct/LanRoute';
+import { answersLikeHa, chooseBaseUrl, detectLanUrl, forgetRoute, lanConfirmed, lanFailed,
+  normalizeLanUrl } from '../../data/direct/LanRoute';
 
 @ObservedV2
 export class DirectStore {
@@ -345,8 +346,11 @@ export class DirectStore {
     const url: string = normalizeLanUrl(value, this.server);
     if (!url) throw new Error('请输入局域网地址，例如 http://192.168.1.10:8123');
     await this.storeLan(url, false, auto);
+    // Wait for the full answer here (the user is looking at the result), however slow the link is.
+    const reachable: boolean = await answersLikeHa(url);
+    if (reachable) lanConfirmed(url);
     await this.prepare();
-    return this.lanActive;
+    return reachable;
   }
 
   async turnOffLan(): Promise<void> {

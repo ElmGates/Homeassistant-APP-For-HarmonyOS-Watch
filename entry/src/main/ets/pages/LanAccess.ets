@@ -48,7 +48,7 @@ struct LanAccess {
   private statusText(): string {
     if (!this.store.lanUrl || this.store.lanOff) return '未开启';
     const source: string = this.store.lanAuto ? '（自动获取）' : '（手动填写）';
-    return (this.store.lanActive ? '当前：局域网直连' : '当前：远程地址（局域网地址暂时连不上）') + source;
+    return (this.store.lanActive ? '当前：局域网直连' : '当前：远程地址（未连 Wi‑Fi 或局域网地址连不上）') + source;
   }
 
   private report(text: string, color: number): void {
@@ -82,7 +82,7 @@ struct LanAccess {
       const auto: boolean = this.detected.length > 0 && this.address.trim() === this.detected;
       const reachable: boolean = await this.store.setLanUrl(this.address, auto);
       this.address = this.store.lanUrl;
-      this.report(reachable ? '已保存，现在走局域网直连' : '已保存。在家能连上这个地址时会自动使用',
+      this.report(reachable ? '已保存，现在走局域网直连' : '已保存。手表连上家里的 Wi‑Fi 时会自动使用',
         reachable ? Theme.OK : Theme.WARN);
       this.store.sync();
     } catch (error) {
@@ -113,7 +113,7 @@ struct LanAccess {
             textColor: this.store.lanActive ? Theme.OK : Theme.TEXT_SUB })
         }
         ListItem() {
-          InfoText({ text: '在家时（手表连 Wi‑Fi 或经手机蓝牙上网都可以）直接访问 HA 的局域网地址，速度更快；连不上时自动改用远程地址。自动获取的地址会在 HA 的 IP 变化后自动更新。', textSize: 12 })
+          InfoText({ text: '手表连接家里的 Wi‑Fi 时：直接访问 HA 的局域网地址，速度更快。经手机蓝牙上网时（系统不允许经蓝牙访问局域网）和出门在外时：照常通过互联网访问远程地址。自动获取的地址会在 HA 的 IP 变化后自动更新。', textSize: 12 })
         }
         ListItem() {
           Row() {

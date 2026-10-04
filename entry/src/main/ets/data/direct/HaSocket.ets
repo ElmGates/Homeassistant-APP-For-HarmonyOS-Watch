@@ -91,10 +91,11 @@ export class HaSocket {
       this.authReject = reject;
     });
     if (url.startsWith('ws://')) {
-      // Plain ws:// is only used for LAN addresses, which answer fast or not at all (the phone just left
-      // home): bound the connect as well, so the sync falls back to the remote address quickly.
+      // Plain ws:// is only used for LAN addresses. Bound connect + auth together so a LAN that stopped
+      // answering (the phone just left home) falls back to the remote address; generous enough for the
+      // several round trips of the handshake through the phone's Bluetooth (~1.5 s each).
       const connected: Promise<void> = socket.connect(url).then(() => auth);
-      await this.withTimeout<void>(connected, 6000, '局域网连接超时');
+      await this.withTimeout<void>(connected, 12000, '局域网连接超时');
       return;
     }
     await socket.connect(url);

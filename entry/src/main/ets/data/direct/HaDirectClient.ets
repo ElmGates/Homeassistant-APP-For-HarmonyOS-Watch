@@ -79,7 +79,8 @@ interface ServicePayload extends ServiceData {
 export class HaDirectClient {
   private baseUrl: string;
   private token: string;
-  // LAN addresses never go through the system proxy.
+  // A LAN address (shorter connect timeout). It still uses the system proxy setting: through the phone's
+  // Bluetooth that relay is the only way out, also to the LAN.
   private direct: boolean;
 
   constructor(baseUrl: string, token: string) {
@@ -165,10 +166,9 @@ export class HaDirectClient {
         },
         extraData: body ?? '',
         expectDataType: http.HttpDataType.STRING,
-        usingProxy: !this.direct,
         // Includes the TLS handshake, which is slow over Bluetooth via the phone and overseas CDNs. A LAN
-        // address answers fast or not at all (the phone just left home): give up early and fall back.
-        connectTimeout: this.direct ? 5000 : 30000,
+        // address gets less: if it stopped answering (the phone just left home) the sync falls back sooner.
+        connectTimeout: this.direct ? 8000 : 30000,
         readTimeout: readTimeout
       });
       if (response.responseCode === 401) {

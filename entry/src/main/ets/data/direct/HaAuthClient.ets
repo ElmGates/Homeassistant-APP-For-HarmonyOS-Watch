@@ -143,8 +143,7 @@ export class HaAuthClient {
         header: { 'Content-Type': contentType },
         extraData: body ?? '',
         expectDataType: http.HttpDataType.STRING,
-        usingProxy: !this.direct,
-        connectTimeout: this.direct ? 5000 : 30000,
+        connectTimeout: this.direct ? 8000 : 30000,
         readTimeout: 20000
       });
       if (response.responseCode === 400 && path === '/auth/token') {
