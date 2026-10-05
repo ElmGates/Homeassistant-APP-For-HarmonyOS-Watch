@@ -54,19 +54,26 @@ let cache: RouteCache | undefined = undefined;
 let probing: Promise<boolean> | undefined = undefined;
 let probingFor: string = '';
 
+// The network this app's requests actually use: the one it is bound to (see WifiPreference), otherwise
+// the system default.
+export function activeNet(): connection.NetHandle {
+  const bound: connection.NetHandle = connection.getAppNetSync();
+  return bound.netId !== 0 ? bound : connection.getDefaultNetSync();
+}
+
 function currentNetId(): number {
   try {
-    return connection.getDefaultNetSync().netId;
+    return activeNet().netId;
   } catch (_) {
     return 0;
   }
 }
 
-// Whether the watch's own network can reach a LAN at all: Wi-Fi, or Ethernet in the emulator. Not the
-// phone's Bluetooth relay, nor cellular.
+// Whether the app's network can reach a LAN at all: Wi-Fi, or Ethernet in the emulator. Not the phone's
+// Bluetooth relay, nor cellular.
 export function onLanCapableNetwork(): boolean {
   try {
-    const net: connection.NetHandle = connection.getDefaultNetSync();
+    const net: connection.NetHandle = activeNet();
     if (net.netId === 0) return false;
     const bearers: connection.NetBearType[] = connection.getNetCapabilitiesSync(net).bearerTypes;
     return bearers.includes(connection.NetBearType.BEARER_WIFI) ||

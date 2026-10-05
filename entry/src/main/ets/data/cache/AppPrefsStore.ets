@@ -23,6 +23,18 @@ export class AppPrefsStore {
     await prefs.flush();
   }
 
+  // Prefer the watch's Wi-Fi over the phone's Bluetooth while the app is open (on by default).
+  async preferWifi(): Promise<boolean> {
+    const prefs: preferences.Preferences = await preferences.getPreferences(this.ctx, this.fileName);
+    return await prefs.get('prefer_wifi', true) as boolean;
+  }
+
+  async setPreferWifi(on: boolean): Promise<void> {
+    const prefs: preferences.Preferences = await preferences.getPreferences(this.ctx, this.fileName);
+    await prefs.put('prefer_wifi', on);
+    await prefs.flush();
+  }
+
   async acceptedTerms(): Promise<number> {
     const prefs: preferences.Preferences = await preferences.getPreferences(this.ctx, this.fileName);
     return await prefs.get('terms_version', 0) as number;

@@ -1,6 +1,6 @@
 import { connection, http } from '@kit.NetworkKit';
 import { HaSocket } from '../direct/HaSocket';
-import { lanProbe, onLanCapableNetwork } from '../direct/LanRoute';
+import { activeNet, lanProbe, onLanCapableNetwork } from '../direct/LanRoute';
 import { safeError } from '../../core/utils/SafeError';
 
 // Step-by-step connectivity check shown on the 连接诊断 page. Each step reports ok/failed, duration and a
@@ -33,7 +33,7 @@ function bearerName(type: connection.NetBearType): string {
 // IPv6 address only when there is no IPv4 one.
 export function localNetworkSummary(): string {
   try {
-    const net: connection.NetHandle = connection.getDefaultNetSync();
+    const net: connection.NetHandle = activeNet();
     if (net.netId === 0) return '没有可用网络';
     const caps: connection.NetCapabilities = connection.getNetCapabilitiesSync(net);
     const type: string = caps.bearerTypes.map((bearer: connection.NetBearType) => bearerName(bearer)).join(' + ');
@@ -111,7 +111,7 @@ export class NetworkDiagnostics {
   private networkType(): void {
     const start: number = Date.now();
     try {
-      const net: connection.NetHandle = connection.getDefaultNetSync();
+      const net: connection.NetHandle = activeNet();
       if (net.netId === 0) {
         this.step('当前网络', start, false, '没有可用网络');
         return;

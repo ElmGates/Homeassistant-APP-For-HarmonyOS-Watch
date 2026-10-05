@@ -48,6 +48,8 @@ export default class EntryAbility extends UIAbility {
     // Show the first screen as soon as the login is known; the last snapshot and the registry are read
     // from disk afterwards, then the first (quick) sync runs.
     await windowStage.loadContent('pages/Index');
+    // The preference is known now (onForeground may have started the Wi-Fi request with the default).
+    store.networkForeground(true);
     await store.loadCaches();
     if (store.configured) store.sync();
   }
@@ -55,7 +57,14 @@ export default class EntryAbility extends UIAbility {
   // Coming back to the watch app after a while: states are probably stale.
   onForeground(): void {
     const store: DirectStore = AppStorageV2.connect(DirectStore, 'directStore', () => new DirectStore())!;
+    store.networkForeground(true);
     store.refreshIfStale(30000);
+  }
+
+  // Release the Wi-Fi request in the background so the watch is not kept on Wi-Fi for this app.
+  onBackground(): void {
+    const store: DirectStore = AppStorageV2.connect(DirectStore, 'directStore', () => new DirectStore())!;
+    store.networkForeground(false);
   }
 
   private handleWant(want: Want): void {

@@ -12,6 +12,7 @@ import { FavoritesStore } from '../../data/cache/FavoritesStore';
 import { LoginHintStore } from '../../data/cache/LoginHintStore';
 import { isMajorDomain, isToggleDomain, quickAction, QuickAction } from '../ui/DomainUi';
 import { WidgetBridge, WidgetForm, WidgetItem } from '../../data/widget/WidgetBridge';
+import { onPreferredNetworkChange, startPreferringWifi, stopPreferringWifi, wifiBound } from '../../data/direct/WifiPreference';
 import { answersLikeHa, chooseBaseUrl, detectLanUrl, forgetRoute, lanConfirmed, lanFailed,
   normalizeLanUrl } from '../../data/direct/LanRoute';
 
@@ -46,6 +47,10 @@ export class DirectStore {
   @Trace startPage: number = 1;
   // Version of the usage terms the user accepted (0 = not yet).
   @Trace acceptedTerms: number = -1;
+  // Use the watch's Wi-Fi instead of the phone's Bluetooth while the app is open (see WifiPreference).
+  @Trace preferWifi: boolean = true;
+  // Whether requests currently go through that Wi-Fi.
+  @Trace onWifi: boolean = false;
   private source: HomeAssistantDataSource | undefined = undefined;
   private credentials: CredentialStore | undefined = undefined;
   private cache: SnapshotCache | undefined = undefined;
@@ -88,6 +93,7 @@ export class DirectStore {
     }
     try {
       this.startPage = await this.appPrefs.startPage();
+      this.preferWifi = await this.appPrefs.preferWifi();
       this.acceptedTerms = await this.appPrefs.acceptedTerms();
     } catch (_) {
       this.acceptedTerms = 0;
@@ -176,6 +182,33 @@ export class DirectStore {
     if (!cache || !this.registryCache || cache.registryAt === this.savedRegistryAt) return;
     this.savedRegistryAt = cache.registryAt;
     this.registryCache.save(cache).catch(() => {});
+  }
+
+  // App in the foreground: ask for Wi-Fi (if preferred). In the background: release it to save power.
+  networkForeground(foreground: boolean): void {
+    onPreferredNetworkChange(() => this.onNetworkChanged());
+    if (foreground && this.preferWifi) {
+      startPreferringWifi();
+    } else {
+      stopPreferringWifi();
+    }
+  }
+
+  async setPreferWifi(on: boolean): Promise<void> {
+    this.preferWifi = on;
+    this.networkForeground(true);
+    if (this.appPrefs) await this.appPrefs.setPreferWifi(on);
+  }
+
+  // The app switched between the bound Wi-Fi and the default network: requests now take another path, so
+  // drop the open WebSocket and re-sync (over the LAN when the new network reaches it).
+  private onNetworkChanged(): void {
+    this.onWifi = wifiBound();
+    forgetRoute();
+    // A sync or command in flight finishes on the old path; the next one takes the new route.
+    if (this.loading || this.actionEntityId.length > 0) return;
+    this.source?.close();
+    if (this.configured && this.cachesLoaded) this.sync();
   }
 
   async setStartPage(page: number): Promise<void> {

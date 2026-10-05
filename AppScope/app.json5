@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "org.superjia.hasshmos",
     "vendor": "superjia",
-    "versionCode": 1009007,
-    "versionName": "1.9.7",
+    "versionCode": 1009008,
+    "versionName": "1.9.8",
     "icon": "$media:layered_image",
     "label": "$string:app_name",
     "description": "$string:app_desc",

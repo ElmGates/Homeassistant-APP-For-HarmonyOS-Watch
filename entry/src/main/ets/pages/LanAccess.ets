@@ -147,6 +147,17 @@ struct LanAccess {
           ListItem() { InfoText({ text: this.resultText, textColor: this.resultColor }) }
         }
         ListItem() {
+          WideButton({ label: this.store.preferWifi ? '优先使用手表 Wi‑Fi：开' : '优先使用手表 Wi‑Fi：关',
+            buttonColor: this.store.preferWifi ? Theme.SELECTED : Theme.SECONDARY,
+            onTap: () => { this.store.setPreferWifi(!this.store.preferWifi).catch(() => {}); } })
+        }
+        ListItem() {
+          InfoText({ text: this.store.preferWifi ?
+            (this.store.onWifi ? '已切换到手表 Wi‑Fi。' : '手表连上 Wi‑Fi 后自动切换。') +
+              '手表同时连着手机蓝牙和 Wi‑Fi 时，系统默认走蓝牙；开启后应用打开期间改走 Wi‑Fi，切到后台即恢复。' :
+            '已关闭：应用跟随系统默认网络，手机蓝牙连着时走蓝牙（无法局域网直连）。', textSize: 11 })
+        }
+        ListItem() {
           InfoText({ text: '局域网内使用 HTTP 明文传输。每次使用前会先在不发送登录凭证的情况下确认该地址确实是 Home Assistant。',
             textSize: 11 })
         }
