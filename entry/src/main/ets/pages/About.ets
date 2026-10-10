@@ -3,6 +3,7 @@ import { SectionLabel, SystemHeader } from '../presentation/ui/components/System
 import { InfoText } from '../presentation/ui/components/Controls';
 import { Theme } from '../presentation/ui/Theme';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { focusList } from '../presentation/ui/Focus';
 
 // Product site (docs/site/ is deployed here).
 const WEBSITE: string = 'https://watch.superjia.org';
@@ -40,6 +41,10 @@ const REFERENCES: OpenSourceReference[] = [
 struct About {
   @Local private version: string = '';
   private readonly scroller: Scroller = new Scroller();
+
+  onPageShow(): void {
+    focusList(this.getUIContext(), 'aboutList');
+  }
 
   // Read from the installed bundle so the page always matches AppScope/app.json5 (major.minor.patch).
   aboutToAppear(): void {
@@ -111,6 +116,7 @@ struct About {
       }
       .width('100%').height('100%')
       .alignListItem(ListItemAlign.Center)
+      .id('aboutList')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
       .scrollBar(BarState.Off)

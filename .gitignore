@@ -25,3 +25,6 @@ local.properties
 /tools/.ha_fixture_state.json
 # 网站文件不进仓库，单独部署到 watch.superjia.org
 docs/site/
+
+# Local HA review reports (contain entity names and states)
+/tools/.ha_review_report.json

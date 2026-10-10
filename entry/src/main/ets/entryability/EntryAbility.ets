@@ -54,17 +54,19 @@ export default class EntryAbility extends UIAbility {
     if (store.configured) store.sync();
   }
 
-  // Coming back to the watch app after a while: states are probably stale.
+  // Coming back to the watch app after a while: states are probably stale. While shown, HA pushes changes.
   onForeground(): void {
     const store: DirectStore = AppStorageV2.connect(DirectStore, 'directStore', () => new DirectStore())!;
     store.networkForeground(true);
     store.refreshIfStale(30000);
+    store.setLive(true);
   }
 
-  // Release the Wi-Fi request in the background so the watch is not kept on Wi-Fi for this app.
+  // Release the Wi-Fi request and the live updates in the background so the watch is not kept busy for this app.
   onBackground(): void {
     const store: DirectStore = AppStorageV2.connect(DirectStore, 'directStore', () => new DirectStore())!;
     store.networkForeground(false);
+    store.setLive(false);
   }
 
   private handleWant(want: Want): void {

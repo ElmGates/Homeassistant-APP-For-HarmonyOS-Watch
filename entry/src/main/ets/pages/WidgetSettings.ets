@@ -10,6 +10,7 @@ import { entityIcon } from '../presentation/ui/Icons';
 import { Theme } from '../presentation/ui/Theme';
 import { safeError } from '../core/utils/SafeError';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { focusList } from '../presentation/ui/Focus';
 
 interface WidgetRouteParams {
   formId?: string;
@@ -29,6 +30,10 @@ struct WidgetSettings {
   @Local private errorText: string = '';
   private openedForOne: boolean = false;
   private readonly scroller: Scroller = new Scroller();
+
+  onPageShow(): void {
+    focusList(this.getUIContext(), 'widgetSettingsList');
+  }
 
   aboutToAppear(): void {
     this.forms = this.store.widgetForms();
@@ -175,6 +180,7 @@ struct WidgetSettings {
           ListItem() { InfoText({ text: this.errorText, textColor: Theme.ERROR }) }
         }
       }
+      .id('widgetSettingsList')
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)

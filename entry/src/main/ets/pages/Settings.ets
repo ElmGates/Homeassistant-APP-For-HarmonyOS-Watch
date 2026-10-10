@@ -6,6 +6,7 @@ import { SystemHeader } from '../presentation/ui/components/SystemHeader';
 import { InfoText, WideButton } from '../presentation/ui/components/Controls';
 import { Theme } from '../presentation/ui/Theme';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { focusList } from '../presentation/ui/Focus';
 import { localNetworkSummary } from '../data/diag/NetworkDiagnostics';
 
 class DiagnoseRoute implements router.RouterOptions {
@@ -32,6 +33,7 @@ struct Settings {
   private readonly scroller: Scroller = new Scroller();
 
   onPageShow(): void {
+    focusList(this.getUIContext(), 'settingsList');
     this.networkText = localNetworkSummary();
   }
 
@@ -132,6 +134,7 @@ struct Settings {
         }
       }
       }
+      .id('settingsList')
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)

@@ -9,6 +9,7 @@ import { InfoText, WideButton } from '../presentation/ui/components/Controls';
 import { glyphColor, isActive, isMajorDomain, isReadOnlyDomain, quickAction, stateLabel } from '../presentation/ui/DomainUi';
 import { Theme } from '../presentation/ui/Theme';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { focusList } from '../presentation/ui/Focus';
 import { entityDisplayName } from '../presentation/ui/EntityDisplayName';
 import { actionIcon, entityIcon } from '../presentation/ui/Icons';
 
@@ -35,6 +36,10 @@ struct DeviceGroupDetails {
   @Local private showSensors: boolean = false;
   @Local private showExtras: boolean = false;
   private readonly scroller: Scroller = new Scroller();
+
+  onPageShow(): void {
+    focusList(this.getUIContext(), 'groupList');
+  }
 
   aboutToAppear(): void {
     const params: GroupRouteParams = this.getUIContext().getRouter().getParams() as GroupRouteParams;
@@ -114,6 +119,7 @@ struct DeviceGroupDetails {
               actionColor: isActive(entity) ? Theme.ACTIVE : Theme.ACCENT,
               actionEnabled: this.canAct(entity),
               busy: this.store.actionEntityId === entity.entityId,
+              result: this.store.resultFor(entity.entityId),
               onOpen: () => this.openEntity(entity.entityId),
               onAction: () => { this.store.runQuick(entity); }
             });
@@ -149,6 +155,7 @@ struct DeviceGroupDetails {
                   actionColor: isActive(entity) ? Theme.ACTIVE : Theme.ACCENT,
                   actionEnabled: this.canAct(entity),
                   busy: this.store.actionEntityId === entity.entityId,
+                  result: this.store.resultFor(entity.entityId),
                   onOpen: () => this.openEntity(entity.entityId),
                   onAction: () => { this.store.runQuick(entity); }
                 });
@@ -186,6 +193,7 @@ struct DeviceGroupDetails {
       }
       }
       .width('100%').height('100%')
+      .id('groupList')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
       .scrollBar(BarState.Off)

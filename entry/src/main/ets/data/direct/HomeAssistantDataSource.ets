@@ -19,6 +19,9 @@ const SESSION_IDLE_MS: number = 45000;
 // After the WebSocket failed (proxy without WebSocket support, …), use REST for a while.
 const SOCKET_BACKOFF_MS: number = 60000;
 
+// Domains whose state is only the time of the last use, "unknown" before the first one.
+const STATELESS_DOMAINS: string[] = ['button', 'input_button', 'scene'];
+
 // Primary-entity priority inside a physical device; earlier entries become the device's main control.
 // Appliance domains rank before plain switches: vendor integrations often attach many auxiliary
 // switches (child lock, indicator light, eco mode…) to an air conditioner or lamp.
@@ -44,6 +47,12 @@ export class HomeAssistantDataSource {
   private live: HaSocket | undefined = undefined;
   private idleTimer: number = -1;
   private socketBackoffUntil: number = 0;
+  // Live updates (see startLive): whether the shared session carries the subscription, which entities it
+  // covers, and the store's callbacks.
+  private watching: boolean = false;
+  private watchedKey: string = '';
+  private liveItems: ((items: DeviceItem[]) => void) | undefined = undefined;
+  private liveLost: (() => void) | undefined = undefined;
 
   constructor(server: string, token: string) {
     this.client = new HaDirectClient(server, token);
@@ -91,6 +100,46 @@ export class HomeAssistantDataSource {
     this.dropSession();
   }
 
+  // Pushes state changes of the shown entities while the app is open (curtains moving, sensors, changes
+  // made elsewhere). `onLost` is called when the subscription ends without stopLive() (connection dropped,
+  // address or token changed). Resolves false when the WebSocket is unavailable: the caller polls instead.
+  async startLive(onItems: (items: DeviceItem[]) => void, onLost: () => void): Promise<boolean> {
+    this.liveItems = onItems;
+    this.liveLost = onLost;
+    if (this.wantedIds.length === 0) return false;
+    const ids: string[] = this.wantedIds.slice();
+    const key: string = ids.join(',');
+    if (this.watching && this.live && this.live.isWatching() && key === this.watchedKey) return true;
+    const socket: HaSocket | undefined = await this.session();
+    if (!socket) return false;
+    await socket.watch(ids, (states: HaEntityState[]) => {
+      if (this.live !== socket || !this.liveItems) return;
+      this.liveItems(states.map((state: HaEntityState) => this.mapState(state)));
+    });
+    this.watching = true;
+    this.watchedKey = key;
+    // A subscribed session stays open while the app is in the foreground.
+    if (this.idleTimer >= 0) clearTimeout(this.idleTimer);
+    this.idleTimer = -1;
+    return true;
+  }
+
+  stopLive(): void {
+    this.liveItems = undefined;
+    this.liveLost = undefined;
+    if (!this.watching) return;
+    this.watching = false;
+    this.watchedKey = '';
+    if (this.live) {
+      this.live.unwatch();
+      this.touchSession();
+    }
+  }
+
+  isLive(): boolean {
+    return this.watching && this.live !== undefined && this.live.isWatching();
+  }
+
   // The shared session, opened on demand. Undefined while the WebSocket is backing off.
   private async session(): Promise<HaSocket | undefined> {
     if (Date.now() < this.socketBackoffUntil) return undefined;
@@ -107,6 +156,9 @@ export class HomeAssistantDataSource {
       this.socketBackoffUntil = Date.now() + SOCKET_BACKOFF_MS;
       throw error as Error;
     }
+    socket.onDrop(() => {
+      if (this.live === socket) this.dropSession();
+    });
     this.live = socket;
     this.touchSession();
     return socket;
@@ -114,6 +166,8 @@ export class HomeAssistantDataSource {
 
   private touchSession(): void {
     if (this.idleTimer >= 0) clearTimeout(this.idleTimer);
+    this.idleTimer = -1;
+    if (this.watching) return;
     this.idleTimer = setTimeout(() => this.dropSession(), SESSION_IDLE_MS);
   }
 
@@ -123,6 +177,12 @@ export class HomeAssistantDataSource {
     const socket: HaSocket | undefined = this.live;
     this.live = undefined;
     if (socket) socket.close().catch(() => {});
+    if (this.watching) {
+      this.watching = false;
+      this.watchedKey = '';
+      const lost: (() => void) | undefined = this.liveLost;
+      lost?.();
+    }
   }
 
   // Entities worth asking HA about after a registry refresh: what the watch showed last time plus every
@@ -283,7 +343,8 @@ export class HomeAssistantDataSource {
       areaId: this.areaByEntity.get(state.entity_id) ?? UNASSIGNED_ROOM,
       deviceId: registry?.device_id,
       entityCategory: registry?.entity_category,
-      available: state.state !== 'unavailable' && state.state !== 'unknown',
+      // Buttons and scenes report "unknown" until first used; they still work.
+      available: state.state !== 'unavailable' && (state.state !== 'unknown' || STATELESS_DOMAINS.includes(domain)),
       attributes: state.attributes
     };
   }

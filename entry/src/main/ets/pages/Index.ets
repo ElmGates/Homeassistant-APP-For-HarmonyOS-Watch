@@ -11,6 +11,7 @@ import { Theme } from '../presentation/ui/Theme';
 import { actionIcon, entityIcon, roomIcon } from '../presentation/ui/Icons';
 import { safeError } from '../core/utils/SafeError';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { TapDetector, focusList } from '../presentation/ui/Focus';
 import { common } from '@kit.AbilityKit';
 
 // Bump when the usage terms below change: everyone is asked to accept them again.
@@ -87,6 +88,7 @@ struct Index {
   @Local private editing: string = '';
   // Index into CARD_LISTS: 0 常用 · 1 我的家 · 2 场景 · 3 更多.
   @Local private page: number = 1;
+  private readonly tap: TapDetector = new TapDetector();
   private readonly scroller: Scroller = new Scroller();
   private readonly favoritesScroller: Scroller = new Scroller();
   private readonly roomsScroller: Scroller = new Scroller();
@@ -98,8 +100,9 @@ struct Index {
     this.page = this.store.startPage;
   }
 
-  // Text fields take focus only when touched directly. Otherwise a tap anywhere in the focusable list
-  // (needed for the digital crown) hands focus to the first field and pops up the keyboard.
+  // Text fields take focus only when tapped directly. Otherwise a tap anywhere in the focusable list
+  // (needed for the digital crown) hands focus to the first field and pops up the keyboard, and a
+  // swipe that starts on a field would open the keyboard instead of scrolling.
   private beginEdit(field: string): void {
     if (this.editing === field) return;
     this.editing = field;
@@ -113,7 +116,18 @@ struct Index {
   }
 
   private endEdit(field: string, editing: boolean): void {
-    if (!editing && this.editing === field) this.editing = '';
+    if (!editing && this.editing === field) {
+      this.editing = '';
+      // The keyboard is closed: hand the crown back to the list.
+      this.focusCurrentList();
+    }
+  }
+
+  // The list the digital crown should scroll on the screen shown now.
+  private focusCurrentList(): void {
+    const id: string = this.store.acceptedTerms < TERMS_VERSION ? 'termsList' :
+      this.store.configured ? (CARD_LISTS[this.page] ?? 'roomsList') : 'loginList';
+    focusList(this.getUIContext(), id);
   }
 
   private async acceptTerms(): Promise<void> {
@@ -130,6 +144,7 @@ struct Index {
 
   onPageShow(): void {
     this.store.refreshIfStale(30000);
+    this.focusCurrentList();
     this.openRequestedWidget();
   }
 
@@ -237,7 +252,8 @@ struct Index {
           .itemWidth(6).itemHeight(6).selectedItemWidth(6).selectedItemHeight(6)
           .color(0x55FFFFFF).selectedColor(Color.White)
           .bottom(10))
-        .onChange((index: number) => this.onPageChange(index));
+        .onChange((index: number) => this.onPageChange(index))
+        .onAppear(() => this.focusCurrentList());
       } else {
         this.loginCard();
       }
@@ -268,6 +284,7 @@ struct Index {
                 actionColor: isActive(item) ? Theme.ACTIVE : Theme.ACCENT,
                 actionEnabled: this.canAct(item),
                 busy: this.store.actionEntityId === item.entityId,
+                result: this.store.resultFor(item.entityId),
                 onOpen: () => this.openEntity(item.entityId),
                 onAction: () => { this.store.runQuick(item); }
               });
@@ -357,6 +374,7 @@ struct Index {
                 actionColor: Theme.ACCENT,
                 actionEnabled: this.canAct(item),
                 busy: this.store.actionEntityId === item.entityId,
+                result: this.store.resultFor(item.entityId),
                 onOpen: () => this.openEntity(item.entityId),
                 onAction: () => { this.store.runQuick(item); }
               });
@@ -434,6 +452,8 @@ struct Index {
           WideButton({ label: '不同意', buttonColor: Theme.DANGER, onTap: () => this.declineTerms() })
         }
       }
+      .id('termsList')
+      .onAppear(() => this.focusCurrentList())
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
@@ -461,7 +481,7 @@ struct Index {
               .id('input_mfa')
               .focusable(this.editing === 'mfa')
               .onTouch((event: TouchEvent) => {
-                if (event.type === TouchType.Down) this.beginEdit('mfa');
+                if (this.tap.isTap(event)) this.beginEdit('mfa');
               })
               .onEditChange((editing: boolean) => this.endEdit('mfa', editing))
               .width('78%').height(48);
@@ -492,7 +512,7 @@ struct Index {
               .id('input_server')
               .focusable(this.editing === 'server')
               .onTouch((event: TouchEvent) => {
-                if (event.type === TouchType.Down) this.beginEdit('server');
+                if (this.tap.isTap(event)) this.beginEdit('server');
               })
               .onEditChange((editing: boolean) => this.endEdit('server', editing))
               .width('78%').height(48);
@@ -507,7 +527,7 @@ struct Index {
               .id('input_username')
               .focusable(this.editing === 'username')
               .onTouch((event: TouchEvent) => {
-                if (event.type === TouchType.Down) this.beginEdit('username');
+                if (this.tap.isTap(event)) this.beginEdit('username');
               })
               .onEditChange((editing: boolean) => this.endEdit('username', editing))
               .width('78%').height(48);
@@ -522,7 +542,7 @@ struct Index {
               .id('input_password')
               .focusable(this.editing === 'password')
               .onTouch((event: TouchEvent) => {
-                if (event.type === TouchType.Down) this.beginEdit('password');
+                if (this.tap.isTap(event)) this.beginEdit('password');
               })
               .onEditChange((editing: boolean) => this.endEdit('password', editing))
               .width('78%').height(48);
@@ -549,6 +569,8 @@ struct Index {
         ListItem() { InfoText({ text: this.store.lastError, textColor: Theme.ERROR }) }
       }
       }
+      .id('loginList')
+      .onAppear(() => this.focusCurrentList())
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)

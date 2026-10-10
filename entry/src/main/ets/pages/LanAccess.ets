@@ -5,6 +5,7 @@ import { InfoText, WideButton } from '../presentation/ui/components/Controls';
 import { Theme } from '../presentation/ui/Theme';
 import { safeError } from '../core/utils/SafeError';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { TapDetector, focusList } from '../presentation/ui/Focus';
 
 // LAN access: on the home Wi-Fi the watch talks to HA's LAN address directly (much faster than the
 // remote HTTPS address through a tunnel or CDN); elsewhere it falls back to the remote address.
@@ -19,16 +20,22 @@ struct LanAccess {
   @Local private busy: boolean = false;
   // Text field allowed to take focus (see beginEdit); '' = none.
   @Local private editing: string = '';
+  private readonly tap: TapDetector = new TapDetector();
   @Local private resultText: string = '';
   @Local private resultColor: number = Theme.TEXT_DIM;
   private readonly scroller: Scroller = new Scroller();
+
+  onPageShow(): void {
+    focusList(this.getUIContext(), 'lanList');
+  }
 
   aboutToAppear(): void {
     this.address = this.store.lanUrl;
   }
 
-  // Text fields take focus only when touched directly. Otherwise a tap anywhere in the focusable list
-  // (needed for the digital crown) hands focus to the first field and pops up the keyboard.
+  // Text fields take focus only when tapped directly. Otherwise a tap anywhere in the focusable list
+  // (needed for the digital crown) hands focus to the first field and pops up the keyboard, and a
+  // swipe that starts on a field would open the keyboard instead of scrolling.
   private beginEdit(field: string): void {
     if (this.editing === field) return;
     this.editing = field;
@@ -42,7 +49,11 @@ struct LanAccess {
   }
 
   private endEdit(field: string, editing: boolean): void {
-    if (!editing && this.editing === field) this.editing = '';
+    if (!editing && this.editing === field) {
+      this.editing = '';
+      // The keyboard is closed: hand the crown back to the list.
+      focusList(this.getUIContext(), 'lanList');
+    }
   }
 
   private statusText(): string {
@@ -123,7 +134,7 @@ struct LanAccess {
               .id('input_address')
               .focusable(this.editing === 'address')
               .onTouch((event: TouchEvent) => {
-                if (event.type === TouchType.Down) this.beginEdit('address');
+                if (this.tap.isTap(event)) this.beginEdit('address');
               })
               .onEditChange((editing: boolean) => this.endEdit('address', editing))
               .width('78%').height(48);
@@ -162,6 +173,7 @@ struct LanAccess {
             textSize: 11 })
         }
       }
+      .id('lanList')
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)

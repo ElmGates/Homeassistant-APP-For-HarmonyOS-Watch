@@ -16,6 +16,18 @@ import { onPreferredNetworkChange, startPreferringWifi, stopPreferringWifi, wifi
 import { answersLikeHa, chooseBaseUrl, detectLanUrl, forgetRoute, lanConfirmed, lanFailed,
   normalizeLanUrl } from '../../data/direct/LanRoute';
 
+// Live updates (see DirectStore.setLive): retry after the subscription dropped, polling interval without a
+// WebSocket, and how long pushed changes are collected before the screen updates.
+const LIVE_RETRY_MS: number = 3000;
+const LIVE_POLL_MS: number = 30000;
+const LIVE_BATCH_MS: number = 400;
+
+// HA answered but refused the command (a value or action the device does not accept): the connection is fine.
+function isRejection(error: Object): boolean {
+  const message: string = error instanceof Error ? error.message : '';
+  return message === 'HA 请求被拒绝' || message === '不支持的设备操作' || message.startsWith('HA HTTP ');
+}
+
 @ObservedV2
 export class DirectStore {
   @Trace rooms: RoomSummary[] = [];
@@ -51,6 +63,10 @@ export class DirectStore {
   @Trace preferWifi: boolean = true;
   // Whether requests currently go through that Wi-Fi.
   @Trace onWifi: boolean = false;
+  // Outcome of the last command, shown briefly next to its control: entity ('' = none) and whether HA
+  // accepted it.
+  @Trace resultEntityId: string = '';
+  @Trace resultOk: boolean = false;
   private source: HomeAssistantDataSource | undefined = undefined;
   private credentials: CredentialStore | undefined = undefined;
   private cache: SnapshotCache | undefined = undefined;
@@ -77,6 +93,13 @@ export class DirectStore {
   // Address requests currently go to: the LAN address or the remote one ('' until the first request).
   private activeBase: string = '';
   private lanDetectTried: boolean = false;
+  // Live updates (see setLive).
+  private liveWanted: boolean = false;
+  private liveTimer: number = -1;
+  private liveFlushTimer: number = -1;
+  private livePending: Map<string, DeviceItem> = new Map<string, DeviceItem>();
+  private liveChangedFavorite: boolean = false;
+  private resultTimer: number = -1;
 
   async restore(ctx: common.UIAbilityContext): Promise<void> {
     this.credentials = new CredentialStore(ctx);
@@ -182,6 +205,92 @@ export class DirectStore {
     if (!cache || !this.registryCache || cache.registryAt === this.savedRegistryAt) return;
     this.savedRegistryAt = cache.registryAt;
     this.registryCache.save(cache).catch(() => {});
+  }
+
+  // Live updates while the app is in the foreground: states pushed by HA over the shared WebSocket (a
+  // curtain's position while it moves, changes made from elsewhere). Without a WebSocket, polls instead.
+  setLive(on: boolean): void {
+    this.liveWanted = on;
+    if (on) {
+      this.scheduleLive(0);
+      return;
+    }
+    if (this.liveTimer >= 0) clearTimeout(this.liveTimer);
+    this.liveTimer = -1;
+    this.source?.stopLive();
+    this.flushLive();
+    if (this.liveChangedFavorite) {
+      this.liveChangedFavorite = false;
+      this.pushWidget();
+    }
+  }
+
+  private scheduleLive(delayMs: number): void {
+    if (!this.liveWanted) return;
+    if (this.liveTimer >= 0) clearTimeout(this.liveTimer);
+    this.liveTimer = setTimeout(() => {
+      this.liveTimer = -1;
+      this.startLive();
+    }, delayMs);
+  }
+
+  private async startLive(): Promise<void> {
+    if (!this.liveWanted || !this.configured) return;
+    // Wait for the launch caches and for a running sync or command (it may switch address or token).
+    if (!this.cachesLoaded || this.loading || this.actionEntityId.length > 0) {
+      this.scheduleLive(2000);
+      return;
+    }
+    let live: boolean = false;
+    try {
+      await this.prepare();
+      if (this.source && this.liveWanted) {
+        live = await this.source.startLive((items: DeviceItem[]) => this.queueLive(items),
+          () => this.scheduleLive(LIVE_RETRY_MS));
+        // The app went to the background while the subscription was being set up.
+        if (live && !this.liveWanted) {
+          this.source.stopLive();
+          return;
+        }
+      }
+    } catch (_) {
+      live = false;
+    }
+    if (!live && this.liveWanted && this.configured) {
+      // No WebSocket right now (or no devices yet): poll, and try the subscription again later.
+      this.refreshIfStale(LIVE_POLL_MS);
+      this.scheduleLive(LIVE_POLL_MS);
+    }
+  }
+
+  // Changes often come in bursts (a moving curtain, several sensors): apply them together.
+  private queueLive(items: DeviceItem[]): void {
+    items.forEach((item: DeviceItem) => { this.livePending.set(item.entityId, item); });
+    if (this.liveFlushTimer >= 0) return;
+    this.liveFlushTimer = setTimeout(() => {
+      this.liveFlushTimer = -1;
+      this.flushLive();
+    }, LIVE_BATCH_MS);
+  }
+
+  private flushLive(): void {
+    if (this.liveFlushTimer >= 0) clearTimeout(this.liveFlushTimer);
+    this.liveFlushTimer = -1;
+    if (this.livePending.size === 0) return;
+    const pending: Map<string, DeviceItem> = this.livePending;
+    this.livePending = new Map<string, DeviceItem>();
+    let changed: boolean = false;
+    const devices: DeviceItem[] = this.devices.map((device: DeviceItem) => {
+      const update: DeviceItem | undefined = pending.get(device.entityId);
+      if (!update) return device;
+      changed = true;
+      if (this.isFavorite(device.entityId)) this.liveChangedFavorite = true;
+      return update;
+    });
+    if (!changed) return;
+    this.devices = devices;
+    this.fetchedAt = Date.now();
+    this.online = true;
   }
 
   // App in the foreground: ask for Wi-Fi (if preferred). In the background: release it to save power.
@@ -441,6 +550,8 @@ export class DirectStore {
         this.lanDetectTried = true;
         this.detectLan(true).catch(() => {});
       }
+      // The shown entities may have changed (new devices, rooms): subscribe to the current set.
+      this.scheduleLive(500);
     } catch (error) {
       // One slow or dropped request shortly after a good sync is not an outage: keep controls usable
       // (each command reports its own failure) instead of locking everything into offline mode.
@@ -471,6 +582,7 @@ export class DirectStore {
   // Re-sync when returning to the app or a page after the data has gone stale.
   async refreshIfStale(maxAgeMs: number): Promise<void> {
     if (!this.configured || !this.cachesLoaded || this.loading || this.actionEntityId.length > 0) return;
+    if (this.source?.isLive()) return;
     if (Date.now() - this.fetchedAt < maxAgeMs) return;
     await this.sync();
   }
@@ -509,15 +621,20 @@ export class DirectStore {
     }
   }
 
+  // `confirmed`: for settings that do not change the state (a climate's fan speed or swing), the check that
+  // the new value has arrived; read-back continues until it holds, like `expectedState`.
   async runService(device: DeviceItem, service: string, data?: ServiceData,
-    expectedState?: string): Promise<void> {
+    expectedState?: string, confirmed?: (updated: DeviceItem) => boolean): Promise<void> {
     if (!this.configured || !this.online || this.actionEntityId.length > 0 || !device.available) return;
     this.actionEntityId = device.entityId;
     this.lastError = '';
     this.message = '正在发送…';
+    this.clearResult();
+    let accepted: boolean = false;
     try {
       await this.prepare();
       await this.source!.callService(device.domain, service, device.entityId, data);
+      accepted = true;
       this.message = 'HA 已接受，正在确认…';
       const delays: number[] = [0, 700, 1300, 2500];
       for (let i: number = 0; i < delays.length; i++) {
@@ -528,20 +645,50 @@ export class DirectStore {
         this.devices = this.devices.map((item: DeviceItem) =>
           item.entityId === device.entityId ? updated : item);
         this.fetchedAt = Date.now();
-        if (!expectedState || updated.state === expectedState) {
-          this.message = expectedState ? '设备状态已确认' : 'HA 已接受，状态已重新读取';
+        const done: boolean = confirmed ? confirmed(updated) : (!expectedState || updated.state === expectedState);
+        if (done) {
+          this.message = expectedState || confirmed ? '设备状态已确认' : 'HA 已接受，状态已重新读取';
           return;
         }
       }
       this.message = 'HA 已接受，设备状态尚未确认';
     } catch (error) {
-      this.online = false;
-      this.lastError = safeError(error, '设备操作失败');
-      this.message = '结果未知，请先刷新状态';
+      if (accepted) {
+        // The command went through; only reading the new state back failed (live updates bring it later).
+        this.message = 'HA 已接受，状态读取失败';
+      } else {
+        // HA answering with an error (unsupported value, device refused) is not a lost connection.
+        if (!isRejection(error as Object)) this.online = false;
+        this.lastError = safeError(error, '设备操作失败');
+        this.message = '操作未成功';
+      }
     } finally {
       this.actionEntityId = '';
+      this.showResult(device.entityId, accepted);
       if (this.isFavorite(device.entityId)) this.pushWidget();
     }
+  }
+
+  // '' (nothing to show), 'ok' or 'fail' for the entity's last command, shown for a moment after it ends.
+  resultFor(entityId: string): string {
+    if (this.resultEntityId.length === 0 || this.resultEntityId !== entityId) return '';
+    return this.resultOk ? 'ok' : 'fail';
+  }
+
+  private showResult(entityId: string, ok: boolean): void {
+    if (this.resultTimer >= 0) clearTimeout(this.resultTimer);
+    this.resultEntityId = entityId;
+    this.resultOk = ok;
+    this.resultTimer = setTimeout(() => {
+      this.resultTimer = -1;
+      this.resultEntityId = '';
+    }, ok ? 1500 : 2500);
+  }
+
+  private clearResult(): void {
+    if (this.resultTimer >= 0) clearTimeout(this.resultTimer);
+    this.resultTimer = -1;
+    this.resultEntityId = '';
   }
 
   async runQuick(device: DeviceItem): Promise<void> {

@@ -5,6 +5,7 @@ import { SystemHeader } from '../presentation/ui/components/SystemHeader';
 import { InfoText, WideButton } from '../presentation/ui/components/Controls';
 import { Theme } from '../presentation/ui/Theme';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { focusList } from '../presentation/ui/Focus';
 
 @Entry
 @ComponentV2
@@ -14,6 +15,10 @@ struct NetworkDiagnose {
   @Local private steps: DiagStep[] = [];
   @Local private running: boolean = false;
   private readonly scroller: Scroller = new Scroller();
+
+  onPageShow(): void {
+    focusList(this.getUIContext(), 'diagnoseList');
+  }
 
   aboutToAppear(): void {
     this.start();
@@ -73,6 +78,7 @@ struct NetworkDiagnose {
       }
       .width('100%').height('100%')
       .alignListItem(ListItemAlign.Center)
+      .id('diagnoseList')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
       .scrollBar(BarState.Off)

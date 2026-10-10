@@ -7,6 +7,7 @@ import { InfoText, WideButton } from '../presentation/ui/components/Controls';
 import { Theme } from '../presentation/ui/Theme';
 import { safeError } from '../core/utils/SafeError';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { focusList } from '../presentation/ui/Focus';
 
 // Shows a QR code; a phone on the same Wi-Fi scans it, fills in the HA login on its own keyboard and
 // the watch logs in with what it receives (see PhoneSetupServer).
@@ -19,6 +20,10 @@ struct PhoneSetup {
   @Local private status: string = '正在准备…';
   @Local private error: string = '';
   private readonly scroller: Scroller = new Scroller();
+
+  onPageShow(): void {
+    focusList(this.getUIContext(), 'phoneSetupList');
+  }
 
   aboutToAppear(): void {
     this.open();
@@ -138,6 +143,7 @@ struct PhoneSetup {
       }
       .width('100%').height('100%')
       .alignListItem(ListItemAlign.Center)
+      .id('phoneSetupList')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
       .scrollBar(BarState.Off)

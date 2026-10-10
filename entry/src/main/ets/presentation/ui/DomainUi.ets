@@ -9,6 +9,9 @@ export interface QuickAction {
   data?: ServiceData;
 }
 
+// Their state is the time of the last use ("unknown" before the first): shown by kind, not by state.
+const STATELESS_DOMAINS: string[] = ['scene', 'button', 'input_button'];
+
 const TOGGLE_DOMAINS: string[] = ['light', 'switch', 'input_boolean', 'fan', 'humidifier'];
 
 // Domains that are an appliance's real function. Other controllable entities on the same device
@@ -40,6 +43,34 @@ const VACUUM_LABELS: Record<string, string> = {
   'paused': '已暂停', 'error': '故障'
 };
 
+// HA's supported_features bits (CoverEntityFeature, MediaPlayerEntityFeature, VacuumEntityFeature). A device
+// rejects a service it does not support, so only supported controls are offered.
+export const COVER_OPEN: number = 1;
+export const COVER_CLOSE: number = 2;
+export const COVER_SET_POSITION: number = 4;
+export const COVER_STOP: number = 8;
+export const COVER_OPEN_TILT: number = 16;
+export const COVER_CLOSE_TILT: number = 32;
+export const COVER_STOP_TILT: number = 64;
+export const MEDIA_PAUSE: number = 1;
+export const MEDIA_VOLUME_SET: number = 4;
+export const MEDIA_PREVIOUS_TRACK: number = 16;
+export const MEDIA_NEXT_TRACK: number = 32;
+export const MEDIA_TURN_ON: number = 128;
+export const MEDIA_TURN_OFF: number = 256;
+export const MEDIA_PLAY: number = 16384;
+export const VACUUM_PAUSE: number = 4;
+export const VACUUM_RETURN_HOME: number = 16;
+export const VACUUM_START: number = 8192;
+
+// Whether the device supports the feature (any of them, when several bits are combined). Without
+// supported_features (older integrations) everything is offered.
+export function supports(item: DeviceItem, feature: number): boolean {
+  const features: number | undefined = item.attributes?.supported_features;
+  if (features === undefined || !isNum(features)) return true;
+  return (features & feature) !== 0;
+}
+
 export function isToggleDomain(domain: string): boolean {
   return TOGGLE_DOMAINS.includes(domain);
 }
@@ -55,6 +86,44 @@ export function isReadOnlyDomain(domain: string): boolean {
 
 export function hvacModeLabel(mode: string): string {
   return HVAC_LABELS[mode] ?? mode;
+}
+
+// Climate fan / swing / preset values differ per integration; the common ones get Chinese names, anything
+// else (vendor-specific, already localized) is shown as reported. Numeric speeds become 「N 档」.
+const FAN_LABELS: Record<string, string> = {
+  'auto': '自动', 'low': '低', 'medium': '中', 'middle': '中', 'mid': '中', 'medium_low': '中低',
+  'medium_high': '中高', 'high': '高', 'highest': '最高', 'lowest': '最低', 'quiet': '静音', 'silent': '静音',
+  'sleep': '睡眠', 'turbo': '强劲', 'strong': '强劲', 'powerful': '强劲', 'focus': '集中', 'diffuse': '扩散',
+  'on': '开', 'off': '关'
+};
+
+const SWING_LABELS: Record<string, string> = {
+  'off': '关闭', 'on': '开启', 'both': '上下左右', 'vertical': '上下', 'horizontal': '左右', 'swing': '摆动',
+  'auto': '自动', 'up': '上', 'down': '下', 'left': '左', 'right': '右', 'middle': '中间', 'center': '中间',
+  'top': '最上', 'bottom': '最下', 'leftmost': '最左', 'rightmost': '最右'
+};
+
+const PRESET_LABELS: Record<string, string> = {
+  'none': '无', 'eco': '节能', 'sleep': '睡眠', 'boost': '强劲', 'comfort': '舒适', 'away': '离家',
+  'home': '在家', 'activity': '活动'
+};
+
+function modeLabel(table: Record<string, string>, mode: string): string {
+  const known: string | undefined = table[mode.toLowerCase()];
+  if (known) return known;
+  return /^[0-9]+$/.test(mode) ? mode + ' 档' : mode;
+}
+
+export function fanModeLabel(mode: string): string {
+  return modeLabel(FAN_LABELS, mode);
+}
+
+export function swingModeLabel(mode: string): string {
+  return /^[0-9]+$/.test(mode) ? '位置 ' + mode : modeLabel(SWING_LABELS, mode);
+}
+
+export function presetModeLabel(mode: string): string {
+  return modeLabel(PRESET_LABELS, mode);
 }
 
 export function isActive(item: DeviceItem): boolean {
@@ -95,7 +164,7 @@ function withUnit(item: DeviceItem): string {
 export function stateLabel(item: DeviceItem): string {
   const state: string = item.state;
   if (state === 'unavailable') return '不可用';
-  if (state === 'unknown') return '未知';
+  if (state === 'unknown' && !STATELESS_DOMAINS.includes(item.domain)) return '未知';
   switch (item.domain) {
     case 'sensor':
     case 'number':
@@ -162,12 +231,23 @@ export function quickAction(item: DeviceItem): QuickAction | undefined {
     case 'button':
     case 'input_button':
       return { label: '按', service: 'press' };
-    case 'cover':
-      return item.state === 'open' || item.state === 'opening' ?
-        { label: '关', service: 'close_cover' } : { label: '开', service: 'open_cover' };
+    case 'cover': {
+      const open: boolean = item.state === 'open' || item.state === 'opening';
+      if (supports(item, open ? COVER_CLOSE : COVER_OPEN)) {
+        return open ? { label: '关', service: 'close_cover' } : { label: '开', service: 'open_cover' };
+      }
+      // Tilt-only covers (louvre roofs, blinds): one tap tilts open or closed.
+      if (supports(item, COVER_OPEN_TILT | COVER_CLOSE_TILT) && !supports(item, COVER_OPEN | COVER_CLOSE)) {
+        return open ? { label: '关', service: 'close_cover_tilt' } : { label: '开', service: 'open_cover_tilt' };
+      }
+      return undefined;
+    }
     case 'media_player':
-      if (item.state === 'playing') return { label: '暂停', service: 'media_pause', expectedState: 'paused' };
-      if (item.state === 'paused' || item.state === 'idle' || item.state === 'on') {
+      if (item.state === 'playing') {
+        return supports(item, MEDIA_PAUSE) ? { label: '暂停', service: 'media_pause', expectedState: 'paused' } :
+          undefined;
+      }
+      if ((item.state === 'paused' || item.state === 'idle' || item.state === 'on') && supports(item, MEDIA_PLAY)) {
         return { label: '播放', service: 'media_play', expectedState: 'playing' };
       }
       return undefined;

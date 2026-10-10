@@ -9,6 +9,7 @@ import { glyphColor, isActive, isReadOnlyDomain, quickAction, stateLabel } from 
 import { Theme } from '../presentation/ui/Theme';
 import { actionIcon, entityIcon } from '../presentation/ui/Icons';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { focusList } from '../presentation/ui/Focus';
 
 interface RoomRouteParams {
   roomId: string;
@@ -51,6 +52,7 @@ struct RoomDevices {
   }
 
   onPageShow(): void {
+    focusList(this.getUIContext(), 'roomDevicesList');
     this.store.refreshIfStale(30000);
   }
 
@@ -108,6 +110,7 @@ struct RoomDevices {
               actionColor: this.quickEntity(group) && isActive(this.quickEntity(group)!) ? Theme.ACTIVE : Theme.ACCENT,
               actionEnabled: this.canAct(this.quickEntity(group)),
               busy: this.quickEntity(group)?.entityId === this.store.actionEntityId,
+              result: this.store.resultFor(this.quickEntity(group)?.entityId ?? ''),
               onOpen: () => this.openGroup(group),
               onAction: () => {
                 const target: DeviceItem | undefined = this.quickEntity(group);
@@ -126,6 +129,7 @@ struct RoomDevices {
       }
       }
       .width('100%').height('100%')
+      .id('roomDevicesList')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
       .scrollBar(BarState.Off)

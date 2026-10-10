@@ -15,12 +15,24 @@ export interface HaEntityAttributes {
   supported_features?: number;
   current_position?: number;
   temperature?: number;
+  // Climate in heat_cool mode: a target range instead of one temperature.
+  target_temp_low?: number;
+  target_temp_high?: number;
   current_temperature?: number;
   min_temp?: number;
   max_temp?: number;
   unit_of_measurement?: string;
   target_temp_step?: number;
   hvac_modes?: string[];
+  // Climate fan speed, swing (up/down; left/right since HA 2024.12) and presets: current value and choices.
+  fan_mode?: string;
+  fan_modes?: string[];
+  swing_mode?: string;
+  swing_modes?: string[];
+  swing_horizontal_mode?: string;
+  swing_horizontal_modes?: string[];
+  preset_mode?: string;
+  preset_modes?: string[];
   options?: string[];
   percentage?: number;
   percentage_step?: number;
@@ -36,7 +48,13 @@ export interface ServiceData {
   brightness_pct?: number;
   position?: number;
   temperature?: number;
+  target_temp_low?: number;
+  target_temp_high?: number;
   hvac_mode?: string;
+  fan_mode?: string;
+  swing_mode?: string;
+  swing_horizontal_mode?: string;
+  preset_mode?: string;
   option?: string;
   percentage?: number;
   volume_level?: number;
@@ -50,8 +68,10 @@ export const ALLOWED_SERVICES: Record<string, string[]> = {
   'input_boolean': ['turn_on', 'turn_off'],
   'fan': ['turn_on', 'turn_off', 'set_percentage'],
   'humidifier': ['turn_on', 'turn_off'],
-  'cover': ['open_cover', 'stop_cover', 'close_cover', 'set_cover_position'],
-  'climate': ['turn_on', 'turn_off', 'set_temperature', 'set_hvac_mode'],
+  'cover': ['open_cover', 'stop_cover', 'close_cover', 'set_cover_position', 'open_cover_tilt', 'stop_cover_tilt',
+    'close_cover_tilt'],
+  'climate': ['turn_on', 'turn_off', 'set_temperature', 'set_hvac_mode', 'set_fan_mode', 'set_swing_mode',
+    'set_swing_horizontal_mode', 'set_preset_mode'],
   'select': ['select_option'],
   'input_select': ['select_option'],
   'number': ['set_value'],
@@ -133,7 +153,13 @@ export class HaDirectClient {
       payload.brightness_pct = extraData.brightness_pct;
       payload.position = extraData.position;
       payload.temperature = extraData.temperature;
+      payload.target_temp_low = extraData.target_temp_low;
+      payload.target_temp_high = extraData.target_temp_high;
       payload.hvac_mode = extraData.hvac_mode;
+      payload.fan_mode = extraData.fan_mode;
+      payload.swing_mode = extraData.swing_mode;
+      payload.swing_horizontal_mode = extraData.swing_horizontal_mode;
+      payload.preset_mode = extraData.preset_mode;
       payload.option = extraData.option;
       payload.percentage = extraData.percentage;
       payload.volume_level = extraData.volume_level;

@@ -15,6 +15,8 @@ export struct ControlTile {
   @Param actionColor: number = Theme.ACCENT;
   @Param actionEnabled: boolean = true;
   @Param busy: boolean = false;
+  // Outcome of the action just run: 'ok' (yellow tick), 'fail' (red cross) or '' (show the button).
+  @Param result: string = '';
   @Event onOpen: () => void = () => {};
   @Event onAction: () => void = () => {};
 
@@ -43,7 +45,16 @@ export struct ControlTile {
       .alignItems(VerticalAlign.Center)
       .onClick(() => this.onOpen());
 
-      if (this.actionIcon !== undefined && !this.busy) {
+      if (this.result.length > 0 && !this.busy) {
+        Row() {
+          Image(this.result === 'ok' ? $r('app.media.ic_result_ok') : $r('app.media.ic_result_fail'))
+            .width(26).height(26).objectFit(ImageFit.Contain);
+        }
+        .width(52).height(44)
+        .borderRadius(22)
+        .backgroundColor(Theme.SECONDARY)
+        .justifyContent(FlexAlign.Center);
+      } else if (this.actionIcon !== undefined && !this.busy) {
         Button({ type: ButtonType.Capsule, stateEffect: true }) {
           Image(this.actionIcon).width(22).height(22).objectFit(ImageFit.Contain);
         }

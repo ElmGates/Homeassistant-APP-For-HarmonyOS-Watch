@@ -3,11 +3,15 @@ import { DirectStore } from '../presentation/store/DirectStore';
 import { DeviceGroup, DeviceItem } from '../data/direct/HomeAssistantModels';
 import { ServiceData } from '../data/direct/HaDirectClient';
 import { SystemHeader } from '../presentation/ui/components/SystemHeader';
-import { InfoText, StepperRow, WideButton } from '../presentation/ui/components/Controls';
-import { hvacModeLabel, isActive, isNum, isToggleDomain, stateLabel } from '../presentation/ui/DomainUi';
+import { InfoText, ModeChips, StepperRow, WideButton } from '../presentation/ui/components/Controls';
+import { COVER_CLOSE, COVER_CLOSE_TILT, COVER_OPEN, COVER_OPEN_TILT, COVER_SET_POSITION, COVER_STOP, COVER_STOP_TILT,
+  fanModeLabel, hvacModeLabel, isActive, isNum, isToggleDomain, MEDIA_NEXT_TRACK, MEDIA_PAUSE, MEDIA_PLAY,
+  MEDIA_PREVIOUS_TRACK, MEDIA_TURN_OFF, MEDIA_TURN_ON, MEDIA_VOLUME_SET, presetModeLabel, stateLabel, supports,
+  swingModeLabel, VACUUM_PAUSE, VACUUM_RETURN_HOME, VACUUM_START } from '../presentation/ui/DomainUi';
 import { entityDisplayName } from '../presentation/ui/EntityDisplayName';
 import { Theme } from '../presentation/ui/Theme';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { focusList } from '../presentation/ui/Focus';
 
 interface EntityRouteParams {
   entityId: string;
@@ -22,6 +26,10 @@ struct DirectEntityDetails {
   @Local private confirmUnlock: boolean = false;
   private unlockTimer: number = -1;
   private readonly scroller: Scroller = new Scroller();
+
+  onPageShow(): void {
+    focusList(this.getUIContext(), 'entityList');
+  }
 
   aboutToAppear(): void {
     const params: EntityRouteParams = this.getUIContext().getRouter().getParams() as EntityRouteParams;
@@ -56,6 +64,12 @@ struct DirectEntityDetails {
       .find((item: DeviceItem) => item.domain === 'climate') : undefined;
     return climate ? '此项是只读读数。返回设备页，打开「' +
       entityDisplayName(climate, group) + '」切换模式。' : '此项由 HA 作为只读状态提供';
+  }
+
+  // Whether the device supports this control (see DomainUi.supports).
+  private can(feature: number): boolean {
+    const device: DeviceItem | undefined = this.device();
+    return device !== undefined && supports(device, feature);
   }
 
   // True when a control may be sent now: online, available and no other action in flight.
@@ -130,6 +144,33 @@ struct DirectEntityDetails {
     return this.device()?.attributes?.temperature ?? 20;
   }
 
+  // heat_cool mode: a target range instead of one temperature. HA expects both ends in one set_temperature.
+  private hasRange(): boolean {
+    return !isNum(this.device()?.attributes?.temperature) && isNum(this.device()?.attributes?.target_temp_low) &&
+      isNum(this.device()?.attributes?.target_temp_high);
+  }
+
+  private setRange(lowDelta: number, highDelta: number): void {
+    const device: DeviceItem | undefined = this.device();
+    if (!device) return;
+    const step: number = this.temperatureStep();
+    const min: number = device.attributes?.min_temp ?? 7;
+    const max: number = device.attributes?.max_temp ?? 35;
+    const low: number = this.clamp(this.roundTo((device.attributes?.target_temp_low ?? 20) + lowDelta * step, step),
+      min, max);
+    const high: number = this.clamp(this.roundTo((device.attributes?.target_temp_high ?? 24) + highDelta * step, step),
+      min, max);
+    if (low > high) return;
+    this.run('set_temperature', { target_temp_low: low, target_temp_high: high });
+  }
+
+  private targetText(): string {
+    if (this.hasRange()) {
+      return this.device()?.attributes?.target_temp_low + '–' + this.device()?.attributes?.target_temp_high + '°';
+    }
+    return (this.device()?.attributes?.temperature ?? '—') + '°';
+  }
+
   private temperatureStep(): number {
     return this.device()?.attributes?.target_temp_step ?? 0.5;
   }
@@ -145,6 +186,47 @@ struct DirectEntityDetails {
 
   private hvacModes(): string[] {
     return this.device()?.attributes?.hvac_modes ?? [];
+  }
+
+  private fanModes(): string[] {
+    return this.device()?.attributes?.fan_modes ?? [];
+  }
+
+  private swingModes(): string[] {
+    return this.device()?.attributes?.swing_modes ?? [];
+  }
+
+  private swingHorizontalModes(): string[] {
+    return this.device()?.attributes?.swing_horizontal_modes ?? [];
+  }
+
+  private presetModes(): string[] {
+    return this.device()?.attributes?.preset_modes ?? [];
+  }
+
+  // Fan speed, swing and presets leave the climate's state unchanged: confirm on the attribute instead.
+  private setFanMode(mode: string): void {
+    const device: DeviceItem | undefined = this.device();
+    if (device) this.store.runService(device, 'set_fan_mode', { fan_mode: mode }, undefined,
+      (updated: DeviceItem) => updated.attributes?.fan_mode === mode);
+  }
+
+  private setSwingMode(mode: string): void {
+    const device: DeviceItem | undefined = this.device();
+    if (device) this.store.runService(device, 'set_swing_mode', { swing_mode: mode }, undefined,
+      (updated: DeviceItem) => updated.attributes?.swing_mode === mode);
+  }
+
+  private setSwingHorizontalMode(mode: string): void {
+    const device: DeviceItem | undefined = this.device();
+    if (device) this.store.runService(device, 'set_swing_horizontal_mode', { swing_horizontal_mode: mode },
+      undefined, (updated: DeviceItem) => updated.attributes?.swing_horizontal_mode === mode);
+  }
+
+  private setPresetMode(mode: string): void {
+    const device: DeviceItem | undefined = this.device();
+    if (device) this.store.runService(device, 'set_preset_mode', { preset_mode: mode }, undefined,
+      (updated: DeviceItem) => updated.attributes?.preset_mode === mode);
   }
 
   private numberValue(): number {
@@ -198,9 +280,20 @@ struct DirectEntityDetails {
             .width('78%').fontSize(26).fontWeight(FontWeight.Medium).maxLines(2)
             .fontColor(this.device() && isActive(this.device()!) ? Theme.WARN : Theme.TEXT)
             .textAlign(TextAlign.Center);
-          Text(this.store.actionEntityId === this.entityId ? '正在执行…' :
-            (this.device()?.available ? '当前状态' : '设备不可用'))
-            .fontSize(13).fontColor(Theme.TEXT_DIM).margin({ top: 4 });
+          if (this.store.resultFor(this.entityId).length > 0) {
+            Row() {
+              Image(this.store.resultFor(this.entityId) === 'ok' ? $r('app.media.ic_result_ok') :
+                $r('app.media.ic_result_fail')).width(18).height(18).objectFit(ImageFit.Contain);
+              Text(this.store.resultFor(this.entityId) === 'ok' ? '执行成功' : '执行失败')
+                .fontSize(13).margin({ left: 4 })
+                .fontColor(this.store.resultFor(this.entityId) === 'ok' ? Theme.WARN : Theme.ERROR);
+            }
+            .margin({ top: 4 });
+          } else {
+            Text(this.store.actionEntityId === this.entityId ? '正在执行…' :
+              (this.device()?.available ? '当前状态' : '设备不可用'))
+              .fontSize(13).fontColor(Theme.TEXT_DIM).margin({ top: 4 });
+          }
         }
         .width('100%').alignItems(HorizontalAlign.Center);
       }
@@ -235,18 +328,48 @@ struct DirectEntityDetails {
       }
 
       if (this.domain() === 'cover') {
-        ListItem() {
-          Row() {
-            Button('打开').width('25%').height(52).backgroundColor(Theme.SECONDARY)
-              .enabled(this.ready()).onClick(() => this.run('open_cover'));
-            Button('停止').width('25%').height(52).margin({ left: 6 }).backgroundColor(Theme.SECONDARY)
-              .enabled(this.ready()).onClick(() => this.run('stop_cover'));
-            Button('关闭').width('25%').height(52).margin({ left: 6 }).backgroundColor(Theme.SECONDARY)
-              .enabled(this.ready()).onClick(() => this.run('close_cover'));
+        if (this.can(COVER_OPEN | COVER_STOP | COVER_CLOSE)) {
+          ListItem() {
+            Row() {
+              if (this.can(COVER_OPEN)) {
+                Button('打开').width('25%').height(52).margin({ left: 3, right: 3 }).backgroundColor(Theme.SECONDARY)
+                  .enabled(this.ready()).onClick(() => this.run('open_cover'));
+              }
+              if (this.can(COVER_STOP)) {
+                Button('停止').width('25%').height(52).margin({ left: 3, right: 3 }).backgroundColor(Theme.SECONDARY)
+                  .enabled(this.ready()).onClick(() => this.run('stop_cover'));
+              }
+              if (this.can(COVER_CLOSE)) {
+                Button('关闭').width('25%').height(52).margin({ left: 3, right: 3 }).backgroundColor(Theme.SECONDARY)
+                  .enabled(this.ready()).onClick(() => this.run('close_cover'));
+              }
+            }
+            .width('100%').justifyContent(FlexAlign.Center);
           }
-          .width('100%').justifyContent(FlexAlign.Center);
         }
-        if (isNum(this.device()?.attributes?.current_position)) {
+        // Slats of blinds and louvre roofs (only when HA reports the features).
+        if (this.device()?.attributes?.supported_features !== undefined &&
+          this.can(COVER_OPEN_TILT | COVER_STOP_TILT | COVER_CLOSE_TILT)) {
+          ListItem() { InfoText({ text: '叶片角度', textSize: 13, textColor: Theme.TEXT_SUB }) }
+          ListItem() {
+            Row() {
+              if (this.can(COVER_OPEN_TILT)) {
+                Button('打开').width('25%').height(52).margin({ left: 3, right: 3 }).backgroundColor(Theme.SECONDARY)
+                  .enabled(this.ready()).onClick(() => this.run('open_cover_tilt'));
+              }
+              if (this.can(COVER_STOP_TILT)) {
+                Button('停止').width('25%').height(52).margin({ left: 3, right: 3 }).backgroundColor(Theme.SECONDARY)
+                  .enabled(this.ready()).onClick(() => this.run('stop_cover_tilt'));
+              }
+              if (this.can(COVER_CLOSE_TILT)) {
+                Button('关闭').width('25%').height(52).margin({ left: 3, right: 3 }).backgroundColor(Theme.SECONDARY)
+                  .enabled(this.ready()).onClick(() => this.run('close_cover_tilt'));
+              }
+            }
+            .width('100%').justifyContent(FlexAlign.Center);
+          }
+        }
+        if (isNum(this.device()?.attributes?.current_position) && this.can(COVER_SET_POSITION)) {
           ListItem() {
             StepperRow({ label: '位置 ' + Math.round(this.coverPosition()) + '%',
               canTap: this.ready(), onMinus: () => this.setCoverPosition(-10),
@@ -273,7 +396,17 @@ struct DirectEntityDetails {
         }
         ListItem() {
           InfoText({ text: '当前 ' + (this.device()?.attributes?.current_temperature ?? '—') + '°  目标 ' +
-            (this.device()?.attributes?.temperature ?? '—') + '°', textSize: 16, textColor: Theme.TEXT })
+            this.targetText(), textSize: 16, textColor: Theme.TEXT })
+        }
+        if (this.hasRange()) {
+          ListItem() {
+            StepperRow({ label: '下限 ' + this.device()?.attributes?.target_temp_low + '°', canTap: this.ready(),
+              onMinus: () => this.setRange(-1, 0), onPlus: () => this.setRange(1, 0) })
+          }
+          ListItem() {
+            StepperRow({ label: '上限 ' + this.device()?.attributes?.target_temp_high + '°', canTap: this.ready(),
+              onMinus: () => this.setRange(0, -1), onPlus: () => this.setRange(0, 1) })
+          }
         }
         if (isNum(this.device()?.attributes?.temperature)) {
           ListItem() {
@@ -281,18 +414,43 @@ struct DirectEntityDetails {
               onMinus: () => this.setTemperature(-1), onPlus: () => this.setTemperature(1) })
           }
         }
+        // Each group appears only when the air conditioner offers it (HA reports the list of choices).
+        if (this.fanModes().length > 0) {
+          ListItem() {
+            ModeChips({ title: '风速', modes: this.fanModes(), labels: this.fanModes().map((mode: string) => fanModeLabel(mode)),
+              current: this.device()?.attributes?.fan_mode ?? '', canTap: this.ready(),
+              onPick: (mode: string) => this.setFanMode(mode) })
+          }
+        }
+        if (this.swingModes().length > 0) {
+          ListItem() {
+            ModeChips({ title: this.swingHorizontalModes().length > 0 ? '上下扫风' : '扫风',
+              modes: this.swingModes(), labels: this.swingModes().map((mode: string) => swingModeLabel(mode)),
+              current: this.device()?.attributes?.swing_mode ?? '', canTap: this.ready(),
+              onPick: (mode: string) => this.setSwingMode(mode) })
+          }
+        }
+        if (this.swingHorizontalModes().length > 0) {
+          ListItem() {
+            ModeChips({ title: '左右扫风', modes: this.swingHorizontalModes(),
+              labels: this.swingHorizontalModes().map((mode: string) => swingModeLabel(mode)),
+              current: this.device()?.attributes?.swing_horizontal_mode ?? '', canTap: this.ready(),
+              onPick: (mode: string) => this.setSwingHorizontalMode(mode) })
+          }
+        }
         if (this.hvacModes().length > 0) {
-          ListItem() { InfoText({ text: '运行模式', textSize: 15 }) }
-          ForEach(this.hvacModes(), (mode: string) => {
-            ListItem() {
-              WideButton({
-                label: hvacModeLabel(mode) + (this.device()?.state === mode ? ' · 当前' : ''),
-                buttonColor: this.device()?.state === mode ? Theme.SELECTED : Theme.SECONDARY,
-                canTap: this.ready() && this.device()?.state !== mode,
-                onTap: () => this.run('set_hvac_mode', { hvac_mode: mode }, mode)
-              })
-            }
-          }, (mode: string) => mode);
+          ListItem() {
+            ModeChips({ title: '运行模式', modes: this.hvacModes(), labels: this.hvacModes().map((mode: string) => hvacModeLabel(mode)),
+              current: this.device()?.state ?? '', canTap: this.ready(),
+              onPick: (mode: string) => this.run('set_hvac_mode', { hvac_mode: mode }, mode) })
+          }
+        }
+        if (this.presetModes().length > 0) {
+          ListItem() {
+            ModeChips({ title: '预设模式', modes: this.presetModes(), labels: this.presetModes().map((mode: string) => presetModeLabel(mode)),
+              current: this.device()?.attributes?.preset_mode ?? '', canTap: this.ready(),
+              onPick: (mode: string) => this.setPresetMode(mode) })
+          }
         }
       }
 
@@ -368,49 +526,68 @@ struct DirectEntityDetails {
         if (this.mediaTitle().length > 0) {
           ListItem() { InfoText({ text: this.mediaTitle(), textSize: 14, textColor: Theme.TEXT_SUB }) }
         }
-        if (this.device()?.state !== 'off' && this.device()?.state !== 'standby') {
+        if (this.device()?.state !== 'off' && this.device()?.state !== 'standby' &&
+          this.can(MEDIA_PREVIOUS_TRACK | MEDIA_PAUSE | MEDIA_PLAY | MEDIA_NEXT_TRACK)) {
           ListItem() {
             Row() {
-              Button('上一首').width('25%').fontSize(13).height(52).backgroundColor(Theme.SECONDARY)
-                .enabled(this.ready()).onClick(() => this.run('media_previous_track'));
-              Button(this.device()?.state === 'playing' ? '暂停' : '播放').width('25%').height(52).margin({ left: 6 })
-                .backgroundColor(Theme.ACCENT).enabled(this.ready())
-                .onClick(() => {
-                  if (this.device()?.state === 'playing') {
-                    this.run('media_pause', undefined, 'paused');
-                  } else {
-                    this.run('media_play', undefined, 'playing');
-                  }
-                });
-              Button('下一首').width('25%').fontSize(13).height(52).margin({ left: 6 }).backgroundColor(Theme.SECONDARY)
-                .enabled(this.ready()).onClick(() => this.run('media_next_track'));
+              if (this.can(MEDIA_PREVIOUS_TRACK)) {
+                Button('上一首').width('25%').fontSize(13).height(52).margin({ left: 3, right: 3 })
+                  .backgroundColor(Theme.SECONDARY).enabled(this.ready()).onClick(() => this.run('media_previous_track'));
+              }
+              if (this.can(this.device()?.state === 'playing' ? MEDIA_PAUSE : MEDIA_PLAY)) {
+                Button(this.device()?.state === 'playing' ? '暂停' : '播放').width('25%').height(52)
+                  .margin({ left: 3, right: 3 }).backgroundColor(Theme.ACCENT).enabled(this.ready())
+                  .onClick(() => {
+                    if (this.device()?.state === 'playing') {
+                      this.run('media_pause', undefined, 'paused');
+                    } else {
+                      this.run('media_play', undefined, 'playing');
+                    }
+                  });
+              }
+              if (this.can(MEDIA_NEXT_TRACK)) {
+                Button('下一首').width('25%').fontSize(13).height(52).margin({ left: 3, right: 3 })
+                  .backgroundColor(Theme.SECONDARY).enabled(this.ready()).onClick(() => this.run('media_next_track'));
+              }
             }
             .width('100%').justifyContent(FlexAlign.Center);
           }
         }
-        if (isNum(this.device()?.attributes?.volume_level)) {
+        if (isNum(this.device()?.attributes?.volume_level) && this.can(MEDIA_VOLUME_SET)) {
           ListItem() {
             StepperRow({ label: '音量 ' + this.volumePercent() + '%',
               canTap: this.ready(), onMinus: () => this.setVolume(-10), onPlus: () => this.setVolume(10) })
           }
         }
-        ListItem() {
-          WideButton({ label: this.device()?.state === 'off' ? '开机' : '关机', canTap: this.ready(),
-            onTap: () => this.run(this.device()?.state === 'off' ? 'turn_on' : 'turn_off') })
+        if (this.can(this.device()?.state === 'off' ? MEDIA_TURN_ON : MEDIA_TURN_OFF)) {
+          ListItem() {
+            WideButton({ label: this.device()?.state === 'off' ? '开机' : '关机', canTap: this.ready(),
+              onTap: () => this.run(this.device()?.state === 'off' ? 'turn_on' : 'turn_off') })
+          }
         }
       }
 
       if (this.domain() === 'vacuum') {
-        ListItem() {
-          Row() {
-            Button('开始').width('25%').height(52).backgroundColor(Theme.ACCENT)
-              .enabled(this.ready()).onClick(() => this.run('start'));
-            Button('暂停').width('25%').height(52).margin({ left: 6 }).backgroundColor(Theme.SECONDARY)
-              .enabled(this.ready()).onClick(() => this.run('pause'));
-            Button('回充').width('25%').height(52).margin({ left: 6 }).backgroundColor(Theme.SECONDARY)
-              .enabled(this.ready()).onClick(() => this.run('return_to_base'));
+        if (this.can(VACUUM_START | VACUUM_PAUSE | VACUUM_RETURN_HOME)) {
+          ListItem() {
+            Row() {
+              if (this.can(VACUUM_START)) {
+                Button('开始').width('25%').height(52).margin({ left: 3, right: 3 }).backgroundColor(Theme.ACCENT)
+                  .enabled(this.ready()).onClick(() => this.run('start'));
+              }
+              if (this.can(VACUUM_PAUSE)) {
+                Button('暂停').width('25%').height(52).margin({ left: 3, right: 3 }).backgroundColor(Theme.SECONDARY)
+                  .enabled(this.ready()).onClick(() => this.run('pause'));
+              }
+              if (this.can(VACUUM_RETURN_HOME)) {
+                Button('回充').width('25%').height(52).margin({ left: 3, right: 3 }).backgroundColor(Theme.SECONDARY)
+                  .enabled(this.ready()).onClick(() => this.run('return_to_base'));
+              }
+            }
+            .width('100%').justifyContent(FlexAlign.Center);
           }
-          .width('100%').justifyContent(FlexAlign.Center);
+        } else {
+          ListItem() { InfoText({ text: '此设备不支持在手表上控制', textSize: 14 }) }
         }
       }
 
@@ -441,6 +618,7 @@ struct DirectEntityDetails {
         ListItem() { InfoText({ text: this.store.lastError, textColor: Theme.ERROR }) }
       }
       }
+      .id('entityList')
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
