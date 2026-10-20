@@ -111,7 +111,13 @@ const PRESET_LABELS: Record<string, string> = {
 function modeLabel(table: Record<string, string>, mode: string): string {
   const known: string | undefined = table[mode.toLowerCase()];
   if (known) return known;
-  return /^[0-9]+$/.test(mode) ? mode + ' 档' : mode;
+  if (/^[0-9]+$/.test(mode)) return mode + ' 档';
+  // Combined values such as "auto_high" / "on_low": translate each part when every part is known.
+  const parts: string[] = mode.toLowerCase().split('_');
+  if (parts.length > 1 && parts.every((part: string) => table[part] !== undefined)) {
+    return parts.map((part: string) => table[part]).join(' · ');
+  }
+  return mode;
 }
 
 export function fanModeLabel(mode: string): string {
@@ -155,9 +161,11 @@ function percentOf(raw: number | undefined, scale: number): string {
 
 function withUnit(item: DeviceItem): string {
   const unit: string = item.attributes?.unit_of_measurement ?? '';
-  // Numbers come back as "60.0" from input_number/number entities; show "60" but keep "24.6".
+  // Numbers come back as "60.0" from input_number/number entities; show "60" but keep "24.6". Computed sensors
+  // carry float noise ("1.08024999999994"): at most 2 decimals (1 from 100 up), trailing zeros dropped.
   const numeric: number = Number(item.state);
-  const value: string = item.state.trim().length > 0 && !Number.isNaN(numeric) ? String(numeric) : item.state;
+  const value: string = item.state.trim().length > 0 && !Number.isNaN(numeric) ?
+    String(Number(numeric.toFixed(Math.abs(numeric) >= 100 ? 1 : 2))) : item.state;
   return unit ? value + ' ' + unit : value;
 }
 

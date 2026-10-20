@@ -11,6 +11,7 @@ import { COVER_CLOSE, COVER_CLOSE_TILT, COVER_OPEN, COVER_OPEN_TILT, COVER_SET_P
 import { entityDisplayName } from '../presentation/ui/EntityDisplayName';
 import { Theme } from '../presentation/ui/Theme';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { scrollTick } from '../presentation/ui/Haptics';
 import { focusList } from '../presentation/ui/Focus';
 
 interface EntityRouteParams {
@@ -277,7 +278,9 @@ struct DirectEntityDetails {
       ListItem() {
         Column() {
           Text(this.device() ? stateLabel(this.device()!) : '—')
-            .width('78%').fontSize(26).fontWeight(FontWeight.Medium).maxLines(2)
+            // One line that shrinks to fit: a wrapping state ("正在打开 · 10%") made the controls jump.
+            .width('78%').fontSize(26).fontWeight(FontWeight.Medium).maxLines(1)
+            .minFontSize(16).maxFontSize(26).heightAdaptivePolicy(TextHeightAdaptivePolicy.MIN_FONT_SIZE_FIRST)
             .fontColor(this.device() && isActive(this.device()!) ? Theme.WARN : Theme.TEXT)
             .textAlign(TextAlign.Center);
           if (this.store.resultFor(this.entityId).length > 0) {
@@ -622,6 +625,7 @@ struct DirectEntityDetails {
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .onWillScroll((offset: number, state: ScrollState, source: ScrollSource) => { scrollTick(offset, source); })
       .scrollBar(BarState.Off)
       .contentEndOffset(100);
       ArcScrollBar({ scroller: this.scroller, state: BarState.Auto })

@@ -1,14 +1,27 @@
 import { bundleManager } from '@kit.AbilityKit';
+import router from '@ohos.router';
 import { SectionLabel, SystemHeader } from '../presentation/ui/components/SystemHeader';
-import { InfoText } from '../presentation/ui/components/Controls';
+import { InfoText, WideButton } from '../presentation/ui/components/Controls';
 import { Theme } from '../presentation/ui/Theme';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { scrollTick } from '../presentation/ui/Haptics';
 import { focusList } from '../presentation/ui/Focus';
 
 // Product site (docs/site/ is deployed here).
 const WEBSITE: string = 'https://watch.superjia.org';
 const PRIVACY_URL: string = 'https://watch.superjia.org/privacy';
-const TERMS_URL: string = 'https://watch.superjia.org/terms';
+
+interface LegalRouteParams {
+  doc: string;
+}
+
+class LegalRoute implements router.RouterOptions {
+  url: string = 'pages/Legal';
+  params?: LegalRouteParams;
+  constructor(doc: string) {
+    this.params = { doc: doc };
+  }
+}
 
 interface OpenSourceReference {
   name: string;
@@ -46,6 +59,10 @@ struct About {
     focusList(this.getUIContext(), 'aboutList');
   }
 
+  private openLegal(doc: string): void {
+    this.getUIContext().getRouter().pushUrl(new LegalRoute(doc), () => {});
+  }
+
   // Read from the installed bundle so the page always matches AppScope/app.json5 (major.minor.patch).
   aboutToAppear(): void {
     bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT)
@@ -75,8 +92,12 @@ struct About {
         ListItem() { InfoText({ text: 'watch.superjia.org', textSize: 13 }) }
         ListItem() { SectionLabel({ title: '隐私与协议' }) }
         ListItem() { InfoText({ text: '本应用不收集、不上传任何个人信息，只与你自己的 Home Assistant 通信。', textSize: 12 }) }
-        ListItem() { InfoText({ text: '隐私政策：' + PRIVACY_URL.replace('https://', ''), textSize: 12, textColor: Theme.TEXT_SUB }) }
-        ListItem() { InfoText({ text: '用户协议：' + TERMS_URL.replace('https://', ''), textSize: 12, textColor: Theme.TEXT_SUB }) }
+        ListItem() {
+          WideButton({ label: '隐私政策', onTap: () => this.openLegal('privacy') })
+        }
+        ListItem() {
+          WideButton({ label: '用户协议', onTap: () => this.openLegal('terms') })
+        }
         ListItem() {
           Row() {
             QRCode(PRIVACY_URL)
@@ -89,7 +110,7 @@ struct About {
           .backgroundColor(Color.White);
         }
         .width('100%')
-        ListItem() { InfoText({ text: '用手机扫码查看完整隐私政策', textSize: 11 }) }
+        ListItem() { InfoText({ text: '也可以用手机扫码，在网页上查看隐私政策', textSize: 11 }) }
         ListItem() { SectionLabel({ title: '开源代码参考' }) }
         ForEach(REFERENCES, (ref: OpenSourceReference) => {
           ListItem() {
@@ -119,6 +140,7 @@ struct About {
       .id('aboutList')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .onWillScroll((offset: number, state: ScrollState, source: ScrollSource) => { scrollTick(offset, source); })
       .scrollBar(BarState.Off)
       .contentEndOffset(100);
       ArcScrollBar({ scroller: this.scroller, state: BarState.Auto })

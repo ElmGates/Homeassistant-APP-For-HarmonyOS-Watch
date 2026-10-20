@@ -9,6 +9,7 @@
     "pages/PhoneSetup",
     "pages/NetworkDiagnose",
     "pages/WidgetSettings",
-    "pages/LanAccess"
+    "pages/LanAccess",
+    "pages/Legal"
   ]
 }

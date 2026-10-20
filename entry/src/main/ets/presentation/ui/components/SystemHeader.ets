@@ -13,7 +13,10 @@ export struct SystemHeader {
         .fontColor(Theme.TEXT)
         .maxLines(1)
         .textAlign(TextAlign.Center)
-        .textOverflow({ overflow: TextOverflow.MARQUEE });
+        .textOverflow({ overflow: TextOverflow.MARQUEE })
+        // A list only takes focus (and so the digital crown) when it contains something focusable; pages made
+        // only of text (privacy policy, diagnostics while running) would ignore the crown until touched.
+        .focusable(true);
     }
     .width('100%')
     .justifyContent(FlexAlign.Center)

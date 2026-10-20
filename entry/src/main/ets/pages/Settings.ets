@@ -3,9 +3,10 @@ import router from '@ohos.router';
 import { DirectStore } from '../presentation/store/DirectStore';
 import { safeError } from '../core/utils/SafeError';
 import { SystemHeader } from '../presentation/ui/components/SystemHeader';
-import { InfoText, WideButton } from '../presentation/ui/components/Controls';
+import { FIT_LABEL, InfoText, WideButton } from '../presentation/ui/components/Controls';
 import { Theme } from '../presentation/ui/Theme';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { scrollTick } from '../presentation/ui/Haptics';
 import { focusList } from '../presentation/ui/Focus';
 import { localNetworkSummary } from '../data/diag/NetworkDiagnostics';
 
@@ -117,8 +118,8 @@ struct Settings {
       }
       ListItem() {
         Row() {
-          Button(this.confirmClear ? '再次点击确认清除' : '更换服务器 / 清除本地数据')
-            .width('78%').height(52).backgroundColor(Theme.DANGER)
+          Button(this.confirmClear ? '再点一次确认退出' : '退出登录')
+            .width('78%').height(52).labelStyle(FIT_LABEL).backgroundColor(Theme.DANGER)
             .onClick(() => { this.clearConnection(); });
         }
         .width('100%').justifyContent(FlexAlign.Center);
@@ -138,6 +139,7 @@ struct Settings {
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .onWillScroll((offset: number, state: ScrollState, source: ScrollSource) => { scrollTick(offset, source); })
       .scrollBar(BarState.Off)
       .contentEndOffset(100);
       ArcScrollBar({ scroller: this.scroller, state: BarState.Auto })

@@ -1,5 +1,15 @@
 import { Theme } from '../Theme';
 
+// Button labels that do not fit shrink (down to 12 fp) and then wrap onto a second line instead of ending
+// in "…": only about eight characters fit at 16 fp on the round screen, and some labels are built at runtime.
+export const FIT_LABEL: LabelStyle = {
+  maxLines: 2,
+  minFontSize: 12,
+  maxFontSize: 16,
+  heightAdaptivePolicy: TextHeightAdaptivePolicy.MIN_FONT_SIZE_FIRST,
+  overflow: TextOverflow.Ellipsis
+};
+
 // Centered full-width button sized for the round 466×466 screen.
 @ComponentV2
 export struct WideButton {
@@ -13,6 +23,7 @@ export struct WideButton {
     Row() {
       Button(this.label)
         .width('78%').height(this.buttonHeight).fontSize(16)
+        .labelStyle(FIT_LABEL)
         .backgroundColor(this.buttonColor)
         .enabled(this.canTap)
         .onClick(() => this.onTap());

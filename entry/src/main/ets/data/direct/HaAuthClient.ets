@@ -64,7 +64,7 @@ export class HaAuthClient {
   }
 
   async login(username: string, password: string, allowLocalHttp: boolean): Promise<LoginStep> {
-    if (this.server.startsWith('http://') && !allowLocalHttp) {
+    if (/^http:\/\//i.test(this.server) && !allowLocalHttp) {
       throw new Error('HTTP 会明文传输密码，请先确认仅在可信局域网使用');
     }
     if (!username.trim() || !password) throw new Error('请输入用户名和密码');

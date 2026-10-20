@@ -5,12 +5,13 @@ import { DeviceItem, RoomSummary } from '../data/direct/HomeAssistantModels';
 import { SystemTile } from '../presentation/ui/components/SystemTile';
 import { SystemHeader } from '../presentation/ui/components/SystemHeader';
 import { ControlTile } from '../presentation/ui/components/ControlTile';
-import { InfoText, WideButton } from '../presentation/ui/components/Controls';
+import { FIT_LABEL, InfoText, WideButton } from '../presentation/ui/components/Controls';
 import { glyphColor, isActive, quickAction, stateLabel } from '../presentation/ui/DomainUi';
 import { Theme } from '../presentation/ui/Theme';
 import { actionIcon, entityIcon, roomIcon } from '../presentation/ui/Icons';
 import { safeError } from '../core/utils/SafeError';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { scrollTick } from '../presentation/ui/Haptics';
 import { TapDetector, focusList } from '../presentation/ui/Focus';
 import { common } from '@kit.AbilityKit';
 
@@ -23,7 +24,7 @@ const TERMS: string[] = [
   '登录后只保存可撤销的登录凭证，由系统安全模块加密存放在手表上；密码不保存。',
   '远程控制设备可能因网络延迟或误触而产生意外结果，请留意设备的实际状态；因使用本应用造成的任何损失，开发者不承担责任。',
   '本应用按 AGPL-3.0 开源协议提供，不附带任何形式的担保。',
-  '完整的隐私政策与用户协议：watch.superjia.org/privacy、watch.superjia.org/terms（也可在「更多 → 关于」中查看）。'
+  '完整的隐私政策和用户协议可以点下面的按钮查看，以后也能在「更多 → 关于」里找到。'
 ];
 
 interface RoomRouteParams {
@@ -33,6 +34,18 @@ interface RoomRouteParams {
 
 interface EntityRouteParams {
   entityId: string;
+}
+
+interface LegalRouteParams {
+  doc: string;
+}
+
+class LegalRoute implements router.RouterOptions {
+  url: string = 'pages/Legal';
+  params?: LegalRouteParams;
+  constructor(doc: string) {
+    this.params = { doc: doc };
+  }
 }
 
 class RoomRoute implements router.RouterOptions {
@@ -70,6 +83,10 @@ class WidgetRoute implements router.RouterOptions {
   params?: WidgetRouteParams;
   constructor(formId: string) { this.params = { formId: formId }; }
 }
+
+// Home page: width (vp) of the left-edge strip where a swipe right leaves the app, and how far it must go.
+const EDGE_VP: number = 24;
+const EXIT_DRAG_VP: number = 40;
 
 // Home cards, left to right. 我的家 opens first.
 const CARD_LISTS: string[] = ['favoritesList', 'roomsList', 'scenesList', 'moreList'];
@@ -136,6 +153,22 @@ struct Index {
     } catch (_) {
       // Accepted for this session; asked again next time if it could not be saved.
     }
+  }
+
+  // An http:// address needs the plain-text warning confirmed before the password is sent.
+  private httpUnconfirmed(): boolean {
+    return /^http:\/\//i.test(this.server.trim()) && !this.allowLocalHttp;
+  }
+
+  private openLegal(doc: string): void {
+    this.getUIContext().getRouter().pushUrl(new LegalRoute(doc), () => {});
+  }
+
+  // The cards take every horizontal swipe, so the system's swipe-right-to-go-back never reaches the home
+  // page: the left-edge strip (see build) sends the app back to the watch face instead.
+  private leaveApp(): void {
+    const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    context.moveAbilityToBackground().catch(() => { context.terminateSelf(); });
   }
 
   private declineTerms(): void {
@@ -254,6 +287,13 @@ struct Index {
           .bottom(10))
         .onChange((index: number) => this.onPageChange(index))
         .onAppear(() => this.focusCurrentList());
+        // Swiping right from the left edge leaves the app from any card, like the system's back gesture on
+        // other pages; swipes that start inside the screen still move between the cards.
+        Column()
+          .width(EDGE_VP).height('100%')
+          .position({ x: 0, y: 0 })
+          .gesture(PanGesture({ direction: PanDirection.Right, distance: EXIT_DRAG_VP })
+            .onActionStart(() => this.leaveApp()));
       } else {
         this.loginCard();
       }
@@ -300,6 +340,7 @@ struct Index {
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .onWillScroll((offset: number, state: ScrollState, source: ScrollSource) => { scrollTick(offset, source); })
       .scrollBar(BarState.Off)
       .contentEndOffset(100);
       ArcScrollBar({ scroller: this.favoritesScroller, state: BarState.Auto })
@@ -343,6 +384,7 @@ struct Index {
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .onWillScroll((offset: number, state: ScrollState, source: ScrollSource) => { scrollTick(offset, source); })
       .scrollBar(BarState.Off)
       .contentEndOffset(100);
       ArcScrollBar({ scroller: this.roomsScroller, state: BarState.Auto })
@@ -390,6 +432,7 @@ struct Index {
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .onWillScroll((offset: number, state: ScrollState, source: ScrollSource) => { scrollTick(offset, source); })
       .scrollBar(BarState.Off)
       .contentEndOffset(100);
       ArcScrollBar({ scroller: this.scenesScroller, state: BarState.Auto })
@@ -427,6 +470,7 @@ struct Index {
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .onWillScroll((offset: number, state: ScrollState, source: ScrollSource) => { scrollTick(offset, source); })
       .scrollBar(BarState.Off)
       .contentEndOffset(100);
       ArcScrollBar({ scroller: this.moreScroller, state: BarState.Auto })
@@ -446,6 +490,12 @@ struct Index {
           ListItem() { InfoText({ text: line, textSize: 13, textColor: Theme.TEXT_SUB }) }
         }, (line: string) => line);
         ListItem() {
+          WideButton({ label: '隐私政策', onTap: () => this.openLegal('privacy') })
+        }
+        ListItem() {
+          WideButton({ label: '用户协议', onTap: () => this.openLegal('terms') })
+        }
+        ListItem() {
           WideButton({ label: '同意并继续', buttonColor: Theme.ACCENT, onTap: () => { this.acceptTerms(); } })
         }
         ListItem() {
@@ -457,6 +507,7 @@ struct Index {
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .onWillScroll((offset: number, state: ScrollState, source: ScrollSource) => { scrollTick(offset, source); })
       .scrollBar(BarState.Off)
       .contentEndOffset(100);
       ArcScrollBar({ scroller: this.scroller, state: BarState.Auto })
@@ -549,11 +600,17 @@ struct Index {
           }
           .width('100%').justifyContent(FlexAlign.Center);
         }
-        if (this.server.trim().startsWith('http://')) {
+        if (/^http:\/\//i.test(this.server.trim())) {
+          // The warning is a wrapping line of its own: as a button label it was cut off on the round screen.
+          if (!this.allowLocalHttp) {
+            ListItem() {
+              InfoText({ text: 'HTTP 未加密，需先确认', textSize: 15, textColor: Theme.WARN })
+            }
+          }
           ListItem() {
             Row() {
-              Button(this.allowLocalHttp ? '已确认：仅可信局域网' : 'HTTP 会明文传输密码 · 点此确认')
-                .width('78%').height(48).fontSize(12)
+              Button(this.allowLocalHttp ? '✓ 已确认使用 HTTP' : '确认使用 HTTP')
+                .width('78%').height(48).fontSize(15).labelStyle(FIT_LABEL)
                 .backgroundColor(this.allowLocalHttp ? Theme.SELECTED : Theme.DANGER)
                 .onClick(() => { this.allowLocalHttp = !this.allowLocalHttp; });
             }
@@ -561,7 +618,8 @@ struct Index {
           }
         }
         ListItem() {
-          WideButton({ label: this.store.loading ? '登录中…' : '登录', canTap: !this.store.loading,
+          WideButton({ label: this.store.loading ? '登录中…' : (this.httpUnconfirmed() ? '请先确认上方提示' : '登录'),
+            canTap: !this.store.loading && !this.httpUnconfirmed(),
             buttonColor: Theme.ACCENT, buttonHeight: 52, onTap: () => { this.connect(); } })
         }
       }
@@ -574,6 +632,7 @@ struct Index {
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .onWillScroll((offset: number, state: ScrollState, source: ScrollSource) => { scrollTick(offset, source); })
       .scrollBar(BarState.Off)
       .contentEndOffset(100);
       ArcScrollBar({ scroller: this.scroller, state: BarState.Auto })

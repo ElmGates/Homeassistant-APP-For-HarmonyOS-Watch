@@ -10,6 +10,7 @@ import { isTransientNetworkError, safeError } from '../../core/utils/SafeError';
 import { HaAuthClient, HaSession, LoginStep } from '../../data/direct/HaAuthClient';
 import { FavoritesStore } from '../../data/cache/FavoritesStore';
 import { LoginHintStore } from '../../data/cache/LoginHintStore';
+import { hapticResult, hapticTap } from '../ui/Haptics';
 import { isMajorDomain, isToggleDomain, quickAction, QuickAction } from '../ui/DomainUi';
 import { WidgetBridge, WidgetForm, WidgetItem } from '../../data/widget/WidgetBridge';
 import { onPreferredNetworkChange, startPreferringWifi, stopPreferringWifi, wifiBound } from '../../data/direct/WifiPreference';
@@ -627,6 +628,8 @@ export class DirectStore {
     expectedState?: string, confirmed?: (updated: DeviceItem) => boolean): Promise<void> {
     if (!this.configured || !this.online || this.actionEntityId.length > 0 || !device.available) return;
     this.actionEntityId = device.entityId;
+    // Only device commands (switches, scenes, levels…) buzz on press; navigation and settings stay silent.
+    hapticTap();
     this.lastError = '';
     this.message = '正在发送…';
     this.clearResult();
@@ -676,6 +679,7 @@ export class DirectStore {
   }
 
   private showResult(entityId: string, ok: boolean): void {
+    hapticResult(ok);
     if (this.resultTimer >= 0) clearTimeout(this.resultTimer);
     this.resultEntityId = entityId;
     this.resultOk = ok;

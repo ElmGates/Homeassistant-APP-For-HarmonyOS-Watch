@@ -9,6 +9,7 @@ import { InfoText, WideButton } from '../presentation/ui/components/Controls';
 import { glyphColor, isActive, isMajorDomain, isReadOnlyDomain, quickAction, stateLabel } from '../presentation/ui/DomainUi';
 import { Theme } from '../presentation/ui/Theme';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { scrollTick } from '../presentation/ui/Haptics';
 import { focusList } from '../presentation/ui/Focus';
 import { entityDisplayName } from '../presentation/ui/EntityDisplayName';
 import { actionIcon, entityIcon } from '../presentation/ui/Icons';
@@ -196,6 +197,7 @@ struct DeviceGroupDetails {
       .id('groupList')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .onWillScroll((offset: number, state: ScrollState, source: ScrollSource) => { scrollTick(offset, source); })
       .scrollBar(BarState.Off)
       .contentEndOffset(100);
       ArcScrollBar({ scroller: this.scroller, state: BarState.Auto })

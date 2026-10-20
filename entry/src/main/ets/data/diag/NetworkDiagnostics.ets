@@ -202,9 +202,9 @@ export class NetworkDiagnostics {
     try {
       await socket.open(this.lanOk ? this.lanUrl : this.server);
       this.socketOk = true;
-      this.step('WebSocket（' + route + '）', start, true, '已连接并认证');
+      this.step('WebSocket', start, true, '已连接并认证（' + route + '）');
     } catch (error) {
-      this.step('WebSocket（' + route + '）', start, false, safeError(error as Object, 'WebSocket 连接失败'));
+      this.step('WebSocket', start, false, safeError(error as Object, 'WebSocket 连接失败') + '（' + route + '）');
       await socket.close();
       return;
     }

@@ -5,6 +5,7 @@ import { SystemHeader } from '../presentation/ui/components/SystemHeader';
 import { InfoText, WideButton } from '../presentation/ui/components/Controls';
 import { Theme } from '../presentation/ui/Theme';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { scrollTick } from '../presentation/ui/Haptics';
 import { focusList } from '../presentation/ui/Focus';
 
 @Entry
@@ -81,6 +82,7 @@ struct NetworkDiagnose {
       .id('diagnoseList')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .onWillScroll((offset: number, state: ScrollState, source: ScrollSource) => { scrollTick(offset, source); })
       .scrollBar(BarState.Off)
       .contentEndOffset(100);
       ArcScrollBar({ scroller: this.scroller, state: BarState.Auto })

@@ -2,7 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 
 // Remembers the last HA address that logged in successfully, to prefill the login forms.
-// Only the address — never the username or password. Kept across "更换服务器" on purpose.
+// Only the address — never the username or password. Kept across "退出登录" on purpose.
 export class LoginHintStore {
   private readonly ctx: common.UIAbilityContext;
   private readonly fileName: string = 'ha_login_hint';

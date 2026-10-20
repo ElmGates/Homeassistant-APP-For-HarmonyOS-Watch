@@ -5,6 +5,7 @@ import { InfoText, WideButton } from '../presentation/ui/components/Controls';
 import { Theme } from '../presentation/ui/Theme';
 import { safeError } from '../core/utils/SafeError';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { scrollTick } from '../presentation/ui/Haptics';
 import { TapDetector, focusList } from '../presentation/ui/Focus';
 
 // LAN access: on the home Wi-Fi the watch talks to HA's LAN address directly (much faster than the
@@ -58,8 +59,8 @@ struct LanAccess {
 
   private statusText(): string {
     if (!this.store.lanUrl || this.store.lanOff) return '未开启';
-    const source: string = this.store.lanAuto ? '（自动获取）' : '（手动填写）';
-    return (this.store.lanActive ? '当前：局域网直连' : '当前：远程地址（未连 Wi‑Fi 或局域网地址连不上）') + source;
+    const source: string = this.store.lanAuto ? ' · 自动获取' : ' · 手动填写';
+    return (this.store.lanActive ? '当前：局域网直连' : '当前：远程地址') + source;
   }
 
   private report(text: string, color: number): void {
@@ -124,7 +125,7 @@ struct LanAccess {
             textColor: this.store.lanActive ? Theme.OK : Theme.TEXT_SUB })
         }
         ListItem() {
-          InfoText({ text: '手表连接家里的 Wi‑Fi 时：直接访问 HA 的局域网地址，速度更快。经手机蓝牙上网时（系统不允许经蓝牙访问局域网）和出门在外时：照常通过互联网访问远程地址。自动获取的地址会在 HA 的 IP 变化后自动更新。', textSize: 12 })
+          InfoText({ text: '在家连 Wi‑Fi 时走局域网，更快；出门或经手机蓝牙上网时自动改走远程地址。', textSize: 14 })
         }
         ListItem() {
           Row() {
@@ -158,25 +159,24 @@ struct LanAccess {
           ListItem() { InfoText({ text: this.resultText, textColor: this.resultColor }) }
         }
         ListItem() {
-          WideButton({ label: this.store.preferWifi ? '优先使用手表 Wi‑Fi：开' : '优先使用手表 Wi‑Fi：关',
+          WideButton({ label: this.store.preferWifi ? 'Wi‑Fi 优先：开' : 'Wi‑Fi 优先：关',
             buttonColor: this.store.preferWifi ? Theme.SELECTED : Theme.SECONDARY,
             onTap: () => { this.store.setPreferWifi(!this.store.preferWifi).catch(() => {}); } })
         }
         ListItem() {
           InfoText({ text: this.store.preferWifi ?
-            (this.store.onWifi ? '已切换到手表 Wi‑Fi。' : '手表连上 Wi‑Fi 后自动切换。') +
-              '手表同时连着手机蓝牙和 Wi‑Fi 时，系统默认走蓝牙；开启后应用打开期间改走 Wi‑Fi，切到后台即恢复。' :
-            '已关闭：应用跟随系统默认网络，手机蓝牙连着时走蓝牙（无法局域网直连）。', textSize: 11 })
+            (this.store.onWifi ? '正在使用手表 Wi‑Fi' : '手表连上 Wi‑Fi 后自动切换') :
+            '关闭后，手机蓝牙连着时会走蓝牙，无法局域网直连', textSize: 13 })
         }
         ListItem() {
-          InfoText({ text: '局域网内使用 HTTP 明文传输。每次使用前会先在不发送登录凭证的情况下确认该地址确实是 Home Assistant。',
-            textSize: 11 })
+          InfoText({ text: '局域网使用 HTTP，连接前会先确认对方是 HA', textSize: 13 })
         }
       }
       .id('lanList')
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .onWillScroll((offset: number, state: ScrollState, source: ScrollSource) => { scrollTick(offset, source); })
       .scrollBar(BarState.Off)
       .contentEndOffset(100);
       ArcScrollBar({ scroller: this.scroller, state: BarState.Auto })

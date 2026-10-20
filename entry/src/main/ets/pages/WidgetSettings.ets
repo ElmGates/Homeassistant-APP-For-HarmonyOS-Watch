@@ -10,6 +10,7 @@ import { entityIcon } from '../presentation/ui/Icons';
 import { Theme } from '../presentation/ui/Theme';
 import { safeError } from '../core/utils/SafeError';
 import { ArcScrollBar } from '@kit.ArkUI';
+import { scrollTick } from '../presentation/ui/Haptics';
 import { focusList } from '../presentation/ui/Focus';
 
 interface WidgetRouteParams {
@@ -184,6 +185,7 @@ struct WidgetSettings {
       .width('100%').height('100%')
       .focusable(true).focusOnTouch(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .onWillScroll((offset: number, state: ScrollState, source: ScrollSource) => { scrollTick(offset, source); })
       .scrollBar(BarState.Off)
       .contentEndOffset(100);
       ArcScrollBar({ scroller: this.scroller, state: BarState.Auto })
