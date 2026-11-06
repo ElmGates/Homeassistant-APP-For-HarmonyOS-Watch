@@ -1,6 +1,8 @@
 # 腕上智家（适用于 Home Assistant 的鸿蒙手表应用）
 
-面向 HarmonyOS 6.1.0 / API 23、1.6 英寸 466×466 圆屏的 ArkTS + ArkUI 手表应用。当前已从单独的直连探针扩展为房间、设备和控制界面；仍在开发与验证中。
+面向 HarmonyOS 6.1.0 / API 23、1.6 英寸 466×466 圆屏的 ArkTS + ArkUI 手表应用。
+
+> **已在华为应用市场上架。** 打开手机「运动健康」App，进入「设备 → 应用市场」，搜索「腕上智家」即可免费安装；也可以在手表的应用市场中直接搜索。
 
 ## 已实现
 
@@ -68,7 +70,9 @@ python tools/ha_test_fixture.py cleanup    # 全部删除
 
 ## 安装到手表
 
-到 [Releases](https://github.com/ElmGates/Homeassistant-APP-For-HarmonyOS-Watch/releases/latest) 下载 `.hap` 安装包，用 [小白调试助手（auto-installer）](https://github.com/likuai2010/auto-installer) 安装到手表即可。
+推荐从华为应用市场安装：手机「运动健康」App →「设备 → 应用市场」，搜索「腕上智家」。
+
+也可以到 [Releases](https://github.com/ElmGates/Homeassistant-APP-For-HarmonyOS-Watch/releases/latest) 下载开源构建的 `.hap` 安装包，用 [小白调试助手（auto-installer）](https://github.com/likuai2010/auto-installer) 签名后安装到手表。
 
 ## 从源码构建
 
